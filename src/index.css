@@ -1,0 +1,188 @@
+/* BuildX · AI Business Analyst design system (from the Claude Design prototype).
+   Fonts are self-hosted variable woff2 subsets extracted from the design bundle:
+   Golos Text carries weights 400–700 in one file per subset, JetBrains Mono 500–600. */
+
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/golos-text-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/golos-text-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/golos-text-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/golos-text-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Beeline theme: canvas #F6F5F2, surface #FFF, ink #17161A, accent #FFD200 */
+  :root {
+    --background: 45 18% 96%;
+    --foreground: 255 8% 9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 255 8% 9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 255 8% 9%;
+
+    --primary: 49 100% 50%;
+    --primary-foreground: 255 8% 9%;
+
+    --secondary: 255 6% 96%;
+    --secondary-foreground: 255 8% 9%;
+
+    --muted: 255 6% 96%;
+    --muted-foreground: 246 4% 45%;
+
+    --accent: 255 6% 96%;
+    --accent-foreground: 255 8% 9%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --success: 142 72% 36%;
+
+    --border: 255 6% 91%;
+    --input: 255 6% 86%;
+    --ring: 49 100% 42%;
+
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 255 8% 9%;
+    --foreground: 45 18% 96%;
+
+    --card: 255 7% 12%;
+    --card-foreground: 45 18% 96%;
+
+    --popover: 255 7% 12%;
+    --popover-foreground: 45 18% 96%;
+
+    --primary: 49 100% 50%;
+    --primary-foreground: 255 8% 9%;
+
+    --secondary: 255 6% 17%;
+    --secondary-foreground: 45 18% 96%;
+
+    --muted: 255 6% 17%;
+    --muted-foreground: 246 6% 66%;
+
+    --accent: 255 6% 17%;
+    --accent-foreground: 45 18% 96%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 45 18% 96%;
+
+    --success: 142 60% 45%;
+
+    --border: 255 6% 19%;
+    --input: 255 6% 24%;
+    --ring: 49 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  ::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.16);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* View enter animation from the design (vfade) */
+  @keyframes vfade {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-vfade {
+    animation: vfade 0.28s ease both;
+  }
+}
