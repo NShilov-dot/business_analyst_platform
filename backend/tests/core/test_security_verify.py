@@ -17,8 +17,8 @@ from jose import jwt
 
 from app.core.security import AuthError, JWKSCache, verify_token
 
-_ISSUER = "https://kc/realms/saas"
-_AUD = "saas-backend"
+_ISSUER = "https://kc/realms/bap"
+_AUD = "bap-backend"
 _TENANT = "11111111-1111-1111-1111-111111111111"
 
 

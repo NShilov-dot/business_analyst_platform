@@ -36,7 +36,7 @@ services:
       - .env
     environment:
       REDIS_URL: redis://redis:6379/0
-      KEYCLOAK_PUBLIC_ISSUER: http://localhost:8080/realms/saas
+      KEYCLOAK_PUBLIC_ISSUER: http://localhost:8080/realms/bap
       PUBLIC_BASE_URL: http://localhost:3000
       FRONTEND_BASE_URL: http://localhost:3000
     ports:

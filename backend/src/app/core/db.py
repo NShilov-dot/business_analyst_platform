@@ -31,7 +31,7 @@ def get_engine(settings: Settings) -> AsyncEngine:
             pool_pre_ping=True,
             connect_args={
                 "server_settings": {
-                    "application_name": "saas-backend",
+                    "application_name": "bap-backend",
                     "statement_timeout": str(settings.database_statement_timeout_ms),
                 }
             },

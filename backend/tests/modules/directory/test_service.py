@@ -213,7 +213,7 @@ async def test_keycloak_reader_excludes_service_accounts() -> None:
     raw = [
         {
             "id": "kc-uuid-5",
-            "username": "service-account-saas-backend",
+            "username": "service-account-bap-backend",
             "firstName": "Service",
             "lastName": "Account",
             "email": "sa@example.com",

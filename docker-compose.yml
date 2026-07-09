@@ -10,7 +10,7 @@
 # COMPOSE_PROJECT_NAME prefixes volumes/containers; override it (env or .env) so
 # two clones of this template can run side by side on one Docker host.
 
-name: ${COMPOSE_PROJECT_NAME:-saas}
+name: ${COMPOSE_PROJECT_NAME:-bap}
 
 services:
   postgres:
@@ -82,7 +82,7 @@ services:
     environment:
       # Internal backchannel URLs (server -> service over the compose network).
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/${KEYCLOAK_REALM:-saas}
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/${KEYCLOAK_REALM:-bap}
     depends_on:
       postgres:
         condition: service_healthy

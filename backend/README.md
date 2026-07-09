@@ -1,6 +1,6 @@
-# SaaS Backend
+# BA Platform Backend
 
-Multi-tenant SaaS backend. FastAPI (async) + Postgres + Keycloak + Redis.
+Multi-tenant BA Platform backend. FastAPI (async) + Postgres + Keycloak + Redis.
 
 ## Tenancy
 

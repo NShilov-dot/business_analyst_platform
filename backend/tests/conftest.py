@@ -11,8 +11,8 @@ def _test_env() -> None:
     os.environ.setdefault("APP_ENV", "local")
     os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app")
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-    os.environ.setdefault("KEYCLOAK_ISSUER", "http://localhost:8080/realms/saas")
-    os.environ.setdefault("KEYCLOAK_AUDIENCE", "saas-backend")
+    os.environ.setdefault("KEYCLOAK_ISSUER", "http://localhost:8080/realms/bap")
+    os.environ.setdefault("KEYCLOAK_AUDIENCE", "bap-backend")
 
 
 @pytest.fixture

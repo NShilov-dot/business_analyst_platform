@@ -115,7 +115,7 @@ def _service(kc: _FakeKC, session: _FakeSession) -> tuple[TenantProvisioningServ
         sessionmaker=cast(async_sessionmaker[AsyncSession], lambda: session),
         kc=cast(KeycloakAdminClient, kc),
         migrate_schema=_migrate,
-        invite_client_id="saas-backend",
+        invite_client_id="bap-backend",
     )
     return svc, migrated
 
@@ -188,7 +188,7 @@ async def test_onboard_compensates_when_a_later_step_fails() -> None:
         sessionmaker=cast(async_sessionmaker[AsyncSession], lambda: session),
         kc=cast(KeycloakAdminClient, kc),
         migrate_schema=_failing_migrate,
-        invite_client_id="saas-backend",
+        invite_client_id="bap-backend",
     )
     with pytest.raises(RuntimeError):
         await svc.onboard_tenant(slug="acme", name="ACME", admin_email="a@b.io")

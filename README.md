@@ -1,6 +1,6 @@
-# Multi-tenant SaaS starter template
+# BA Platform — multi-tenant starter template
 
-An internal Beeline starter template for building multi-tenant SaaS products.
+An internal Beeline starter template for building multi-tenant products.
 Clone it, rebrand it (one script), replace the example domain, and you have a
 production-shaped backend + SPA with auth, tenant isolation, and the quality
 gates already wired.

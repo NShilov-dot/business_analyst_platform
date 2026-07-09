@@ -40,7 +40,7 @@ demo tenant:
 > Editing `backend/keycloak/realm-export.json` later? `--import-realm` only runs
 > when the realm does **not** exist yet — to re-import, wipe the Keycloak volume
 > (`docker compose stop keycloak keycloak-db && docker compose rm -f keycloak keycloak-db`
-> `&& docker volume rm saas_keycloak-db-data`), then `make up` and restart `app`.
+> `&& docker volume rm bap_keycloak-db-data`), then `make up` and restart `app`.
 > App Postgres/Redis data survive; everyone has to log in again.
 
 Try the self-service flow too: visit **http://localhost:3000/signup**, register a

@@ -1,4 +1,4 @@
-# SaaS (FastAPI + Keycloak + React) — developer task runner.
+# BA Platform (FastAPI + Keycloak + React) — developer task runner.
 # Run `make` or `make help` to list targets.
 #
 # Environments are separate compose stacks:

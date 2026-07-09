@@ -111,7 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(settings)
 
     app = FastAPI(
-        title="SaaS Backend",
+        title="BA Platform Backend",
         version=__version__,
         debug=settings.app_debug,
         lifespan=lifespan,

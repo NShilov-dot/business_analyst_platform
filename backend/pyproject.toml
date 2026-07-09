@@ -1,7 +1,7 @@
 [project]
-name = "saas-backend"
+name = "bap-backend"
 version = "0.1.0"
-description = "Multi-tenant SaaS backend (FastAPI + Postgres + Keycloak)"
+description = "Multi-tenant BA Platform backend (FastAPI + Postgres + Keycloak)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.0",

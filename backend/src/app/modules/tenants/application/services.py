@@ -49,7 +49,7 @@ _RESERVED_SLUGS = frozenset(
         "platform",
         "public",
         "root",
-        "saas",
+        "bap",
         "static",
         "status",
         "support",

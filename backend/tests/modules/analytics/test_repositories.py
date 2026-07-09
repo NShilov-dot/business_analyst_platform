@@ -33,8 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # ---------------------------------------------------------------------------
 os.environ.setdefault("APP_ENV", "local")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-os.environ.setdefault("KEYCLOAK_ISSUER", "http://localhost:8080/realms/saas")
-os.environ.setdefault("KEYCLOAK_AUDIENCE", "saas-backend")
+os.environ.setdefault("KEYCLOAK_ISSUER", "http://localhost:8080/realms/bap")
+os.environ.setdefault("KEYCLOAK_AUDIENCE", "bap-backend")
 
 
 # ---------------------------------------------------------------------------
