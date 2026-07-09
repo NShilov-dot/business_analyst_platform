@@ -14,10 +14,10 @@ import pytest
 
 from app.core.keycloak_admin import KeycloakAdminClient, KeycloakAdminError, TenantGroupSpec
 
-_ISSUER = "http://keycloak:8080/realms/saas"
+_ISSUER = "http://keycloak:8080/realms/bap"
 _TOKEN_BODY = {"access_token": "tok-abc", "expires_in": 300}
 _TOKEN_URL_PART = "openid-connect/token"
-_ADMIN_BASE_PART = "/admin/realms/saas"
+_ADMIN_BASE_PART = "/admin/realms/bap"
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ def _client(*extra_routes: _Route) -> tuple[KeycloakAdminClient, _FakeTransport]
     http = httpx.AsyncClient(transport=transport)
     kc = KeycloakAdminClient(
         issuer=_ISSUER,
-        realm="saas",
+        realm="bap",
         client_id="admin-svc",
         client_secret="secret",
         _http=http,
@@ -121,7 +121,7 @@ async def test_token_error_raises_keycloak_admin_error() -> None:
     http = httpx.AsyncClient(transport=transport)
     kc = KeycloakAdminClient(
         issuer=_ISSUER,
-        realm="saas",
+        realm="bap",
         client_id="bad",
         client_secret="bad",
         _http=http,
@@ -145,7 +145,7 @@ async def test_create_group_returns_id_from_location() -> None:
             f"{_ADMIN_BASE_PART}/groups",
             201,
             json={},
-            headers={"Location": f"http://keycloak:8080/admin/realms/saas/groups/{group_id}"},
+            headers={"Location": f"http://keycloak:8080/admin/realms/bap/groups/{group_id}"},
         ),
     )
     result = await kc.create_group("tenant_acme", attributes={"tenant_id": ["uuid-1"]})
@@ -229,7 +229,7 @@ async def test_find_users_passes_params() -> None:
     )
     http = httpx.AsyncClient(transport=transport)
     kc = KeycloakAdminClient(
-        issuer=_ISSUER, realm="saas", client_id="c", client_secret="s", _http=http
+        issuer=_ISSUER, realm="bap", client_id="c", client_secret="s", _http=http
     )
     result = await kc.find_users(email="alice@example.com")
     assert result == [{"id": "u1"}]
@@ -246,7 +246,7 @@ async def test_create_user_returns_id_from_location() -> None:
         f"{_ADMIN_BASE_PART}/users",
         201,
         json={},
-        headers={"Location": f"http://keycloak:8080/admin/realms/saas/users/{uid}"},
+        headers={"Location": f"http://keycloak:8080/admin/realms/bap/users/{uid}"},
     )
     kc, _ = _client(route)
     result = await kc.create_user(
@@ -277,11 +277,11 @@ async def test_send_execute_actions_email() -> None:
     route = _Route("PUT", f"{_ADMIN_BASE_PART}/users/u1/execute-actions-email", 204)
     kc, transport = _client(route)
     await kc.send_execute_actions_email(
-        "u1", ["UPDATE_PASSWORD", "VERIFY_EMAIL"], client_id="saas-backend"
+        "u1", ["UPDATE_PASSWORD", "VERIFY_EMAIL"], client_id="bap-backend"
     )
     assert route.calls == 1
     put_call = next(c for c in transport.all_calls if "execute-actions-email" in c)
-    assert "client_id=saas-backend" in put_call
+    assert "client_id=bap-backend" in put_call
 
 
 @pytest.mark.asyncio

@@ -34,7 +34,7 @@ _RAW_USERS: list[dict[str, Any]] = [
     {
         # service account — must be excluded
         "id": "aaaaaaaa-0000-0000-0000-000000000002",
-        "username": "service-account-saas-backend-admin",
+        "username": "service-account-bap-backend-admin",
     },
 ]
 

@@ -9,7 +9,7 @@ the host venv against the docker-exposed Keycloak without importing the app:
 
 Env overrides (sensible dev defaults):
     KC_URL         http://localhost:8080
-    KC_REALM       saas
+    KC_REALM       bap
     KC_ADMIN_USER  admin
     KC_ADMIN_PASS  admin
     TENANT_ID      11111111-1111-1111-1111-111111111111   (the demo tenant)
@@ -31,7 +31,7 @@ import sys
 import httpx
 
 KC_URL = os.environ.get("KC_URL", "http://localhost:8080").rstrip("/")
-REALM = os.environ.get("KC_REALM", "saas")
+REALM = os.environ.get("KC_REALM", "bap")
 ADMIN_USER = os.environ.get("KC_ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("KC_ADMIN_PASS", "admin")
 TENANT_ID = os.environ.get("TENANT_ID", "11111111-1111-1111-1111-111111111111")

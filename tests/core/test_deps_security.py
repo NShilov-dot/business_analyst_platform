@@ -11,8 +11,8 @@ from app.core.errors import CsrfError
 
 _SETTINGS = Settings(
     database_url="postgresql+asyncpg://app:app@db:5432/app",
-    keycloak_audience="saas-backend",
-    keycloak_issuer="https://kc/realms/saas",
+    keycloak_audience="bap-backend",
+    keycloak_issuer="https://kc/realms/bap",
     redis_url="redis://r:6379/0",
     frontend_base_url="https://fe.x",
     public_base_url="https://api.x",

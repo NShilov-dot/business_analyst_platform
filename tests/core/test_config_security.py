@@ -9,8 +9,8 @@ from app.core.crypto import generate_key
 
 _BASE = dict(
     database_url="postgresql+asyncpg://app:app@db:5432/app",
-    keycloak_audience="saas-backend",
-    keycloak_issuer="https://kc/realms/saas",
+    keycloak_audience="bap-backend",
+    keycloak_issuer="https://kc/realms/bap",
 )
 
 
@@ -71,11 +71,11 @@ def test_redis_with_password_is_accepted() -> None:
 def test_cookie_name_and_secure_track_scheme() -> None:
     https = Settings(public_base_url="https://api.x", redis_url="redis://r:6379/0", **_BASE)
     assert https.cookies_secure is True
-    assert https.session_cookie_effective_name == "__Host-saas_session"
+    assert https.session_cookie_effective_name == "__Host-bap_session"
 
     http = Settings(public_base_url="http://localhost:8000", redis_url="redis://r:6379/0", **_BASE)
     assert http.cookies_secure is False
-    assert http.session_cookie_effective_name == "saas_session"
+    assert http.session_cookie_effective_name == "bap_session"
 
 
 def test_csrf_allowed_origins_includes_frontend_and_cors() -> None:

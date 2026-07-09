@@ -20,7 +20,7 @@ from app.core.oidc import (
     generate_state,
 )
 
-_ISSUER = "http://kc:8080/realms/saas"
+_ISSUER = "http://kc:8080/realms/bap"
 
 
 @dataclass
@@ -54,7 +54,7 @@ class _FakeTransport(httpx.AsyncBaseTransport):
 def _make_client(*routes: _Route) -> OIDCClient:
     return OIDCClient(
         issuer=_ISSUER,
-        client_id="saas-backend",
+        client_id="bap-backend",
         client_secret="topsecret",
         _http=httpx.AsyncClient(transport=_FakeTransport(*routes)),
     )
@@ -63,9 +63,9 @@ def _make_client(*routes: _Route) -> OIDCClient:
 def test_public_issuer_used_for_browser_endpoints_internal_for_backchannel() -> None:
     """authorize + end_session target the public issuer; token/userinfo the internal one."""
     client = OIDCClient(
-        issuer="http://keycloak:8080/realms/saas",  # backchannel
-        public_issuer="http://localhost:8080/realms/saas",  # browser
-        client_id="saas-backend",
+        issuer="http://keycloak:8080/realms/bap",  # backchannel
+        public_issuer="http://localhost:8080/realms/bap",  # browser
+        client_id="bap-backend",
         client_secret="topsecret",
     )
     authorize = client.build_authorize_url(
@@ -76,15 +76,15 @@ def test_public_issuer_used_for_browser_endpoints_internal_for_backchannel() -> 
     logout = client.build_logout_url(
         post_logout_redirect_uri="http://localhost:3000/", id_token_hint="idt"
     )
-    assert authorize.startswith("http://localhost:8080/realms/saas/protocol/openid-connect/auth")
-    assert logout.startswith("http://localhost:8080/realms/saas/protocol/openid-connect/logout")
+    assert authorize.startswith("http://localhost:8080/realms/bap/protocol/openid-connect/auth")
+    assert logout.startswith("http://localhost:8080/realms/bap/protocol/openid-connect/logout")
     # Backchannel endpoints stay on the internal hostname.
     assert client._token_url.startswith("http://keycloak:8080/")  # type: ignore[attr-defined]
     assert client._userinfo_url.startswith("http://keycloak:8080/")  # type: ignore[attr-defined]
 
 
 def test_public_issuer_defaults_to_internal_when_unset() -> None:
-    client = OIDCClient(issuer=_ISSUER, client_id="saas-backend", client_secret="x")
+    client = OIDCClient(issuer=_ISSUER, client_id="bap-backend", client_secret="x")
     url = client.build_authorize_url(redirect_uri="http://cb", state="S", pkce_challenge="C")
     assert url.startswith(f"{_ISSUER}/protocol/openid-connect/auth")
 
@@ -131,7 +131,7 @@ def test_authorize_url_contains_required_params() -> None:
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert qs["response_type"] == ["code"]
-    assert qs["client_id"] == ["saas-backend"]
+    assert qs["client_id"] == ["bap-backend"]
     assert qs["state"] == ["STATE123"]
     assert qs["code_challenge"] == ["CHALLENGE"]
     assert qs["code_challenge_method"] == ["S256"]

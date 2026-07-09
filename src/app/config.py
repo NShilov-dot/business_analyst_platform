@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from app.core.crypto import TokenCipher
 
 _WEAK_SECRETS = frozenset(
-    {"", "change-me-in-prod", "changeme", "secret", "admin", "saas-backend-admin-dev-secret"}
+    {"", "change-me-in-prod", "changeme", "secret", "admin", "bap-backend-admin-dev-secret"}
 )
 
 
@@ -61,14 +61,14 @@ class Settings(BaseSettings):
     keycloak_expected_token_types: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["Bearer"]
     )
-    keycloak_realm: str = "saas"
-    keycloak_admin_client_id: str = "saas-backend-admin"
+    keycloak_realm: str = "bap"
+    keycloak_admin_client_id: str = "bap-backend-admin"
     keycloak_admin_client_secret: SecretStr = SecretStr("")
-    oidc_client_id: str = "saas-backend"
+    oidc_client_id: str = "bap-backend"
     oidc_client_secret: SecretStr = SecretStr("change-me-in-prod")
     public_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8000")
     frontend_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:5173")
-    session_cookie_name: str = "saas_session"
+    session_cookie_name: str = "bap_session"
     session_ttl_seconds: int = 36_000
     session_idle_seconds: int = 1_800
     session_encryption_keys: Annotated[list[SecretStr], NoDecode] = Field(default_factory=list)
