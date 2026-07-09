@@ -1,0 +1,57 @@
+# Development overlay. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# (or just `make up`). Pairs with the project-root .env.
+#
+# Host ports bind to 127.0.0.1 (loopback) so the stack isn't exposed on the LAN
+# even on a shared dev host. The browser uses localhost:3000 (nginx) + :8080 (KC).
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5433:5432"   # 5433 to avoid colliding with other local Postgres
+
+  redis:
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "127.0.0.1:6380:6379"
+
+  keycloak:
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  app:
+    build:
+      target: dev
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      KEYCLOAK_PUBLIC_ISSUER: http://localhost:8080/realms/saas
+      PUBLIC_BASE_URL: http://localhost:3000
+      FRONTEND_BASE_URL: http://localhost:3000
+    ports:
+      - "127.0.0.1:8001:8000"   # debug/direct access only; browser goes via nginx :3000
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/tests:/app/tests
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # frontend stays internal (no host ports) — reached only through the edge nginx.
+
+  nginx:
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:3000:80"   # browser entry point in dev

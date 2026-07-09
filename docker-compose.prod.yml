@@ -1,0 +1,71 @@
+# Production overlay. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# (or `make up ENV=prod` / `make prod-up`). Reads secrets from .env.prod.
+#
+# Hardening vs dev:
+#   - ONLY the edge nginx publishes ports (443/80). Postgres/Redis/Keycloak/app
+#     are internal-only — never reachable from the host/LAN.
+#   - app runs the `runtime` image (gunicorn, non-root), no source mounts, APP_ENV=prod
+#     (which makes validate_for_production enforce HTTPS issuer, real secrets,
+#     Redis auth, trusted_hosts, session-encryption keys, …).
+#   - Redis requires a password; Keycloak runs `start` (not start-dev) behind TLS.
+#
+# Required env (.env.prod) — see .env.prod.example. `${VAR:?…}` fails fast if unset.
+
+# postgres / keycloak-db / frontend inherit the base unchanged (no published ports
+# in prod — they're internal-only by virtue of the base not publishing any).
+services:
+  keycloak:
+    # Production mode. TLS is terminated at the edge nginx, so Keycloak trusts
+    # X-Forwarded-* and serves HTTP internally. Expose it publicly via the edge
+    # (add a server block for KC_HOSTNAME in nginx.prod.conf) or your own ingress.
+    command: ["start", "--optimized", "--import-realm"]
+    environment:
+      KC_HOSTNAME: ${KC_HOSTNAME:?set KC_HOSTNAME (public Keycloak host, e.g. auth.example.com)}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?set KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD}
+    # no published ports — fronted by the edge / ingress
+
+  redis:
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # no published ports — internal only
+
+  app:
+    build:
+      target: runtime
+    env_file:
+      - .env.prod
+    environment:
+      APP_ENV: prod
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+      KEYCLOAK_PUBLIC_ISSUER: ${KEYCLOAK_PUBLIC_ISSUER:?set KEYCLOAK_PUBLIC_ISSUER (https public Keycloak realm URL)}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL (https public app URL)}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:?set FRONTEND_BASE_URL (https public app URL)}
+    # Override gunicorn to trust forwarded headers ONLY from the private docker
+    # network (the edge nginx), not "*". The app is also unpublished, so it's
+    # only reachable via the edge.
+    command:
+      - gunicorn
+      - app.main:app
+      - --worker-class=uvicorn.workers.UvicornWorker
+      - --workers=4
+      - --bind=0.0.0.0:8000
+      - --forwarded-allow-ips=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - --access-logfile=-
+      - --error-logfile=-
+    # no source mounts, no published ports
+
+  nginx:
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
