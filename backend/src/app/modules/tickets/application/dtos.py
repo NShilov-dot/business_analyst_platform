@@ -8,7 +8,6 @@ Nullable fields that can be explicitly set to None use ``*_set`` flags
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import NamedTuple
 from uuid import UUID
 
@@ -123,7 +122,7 @@ class AttestSpecApprovalCommand:
     Only the BA role may sign this — no admin fallback.
     ``agreed_with_subject`` must equal the active business_owner.
 
-    ``spec_ref`` is optional: in this product the ticket itself IS the ТЗ, so
+    ``spec_ref`` is optional: in this product the ticket itself IS the spec, so
     when it is omitted the service pins a self-reference to the ticket and its
     current intake-submission version. An explicit value (e.g. an external
     Confluence/tracker URL) is still honoured if provided.
@@ -214,12 +213,6 @@ class ListTicketsQuery:
     offset: int = 0
 
 
-@dataclass(slots=True, kw_only=True)
-class IntakeShareQuery:
-    created_from: datetime | None = None
-    created_to: datetime | None = None
-
-
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -241,18 +234,3 @@ class TicketDetail:
     assignments: list[Assignment]
     attestations: list[GateAttestation]
     triage_decisions: list[TriageDecision]
-
-
-@dataclass(slots=True, kw_only=True)
-class IntakeShareRow:
-    template_version_id: UUID
-    count: int
-
-
-@dataclass(slots=True, kw_only=True)
-class IntakeShareStats:
-    total: int
-    free_form: int
-    templated: int
-    templated_share: float
-    by_template_version: list[IntakeShareRow]

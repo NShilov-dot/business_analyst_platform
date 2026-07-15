@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated
@@ -72,6 +73,28 @@ SessionStoreDep = Annotated[SessionStore, Depends(_session_store_dep)]
 # ---------------------------------------------------------------------------
 
 _REFRESH_LEEWAY_SECONDS = 30
+# When we lose the single-flight lock, poll the store for the winner's rotated
+# tokens: up to _REFRESH_WAIT_POLLS * _REFRESH_WAIT_INTERVAL (~1s) before giving up.
+_REFRESH_WAIT_POLLS = 20
+_REFRESH_WAIT_INTERVAL = 0.05
+
+
+async def _await_concurrent_refresh(
+    store: SessionStore, sid: str, data: SessionData
+) -> SessionData | None:
+    """Wait briefly for a concurrent lock-holder to store refreshed tokens.
+
+    Returns the refreshed SessionData once its access_token differs from ours,
+    or None if the session vanished or no refresh was observed within the window.
+    """
+    for _ in range(_REFRESH_WAIT_POLLS):
+        await asyncio.sleep(_REFRESH_WAIT_INTERVAL)
+        latest = await store.get(sid)
+        if latest is None:
+            return None
+        if latest.access_token != data.access_token:
+            return latest
+    return None
 
 
 async def _maybe_refresh(
@@ -81,30 +104,51 @@ async def _maybe_refresh(
     oidc: OIDCClient,
     store: SessionStore,
 ) -> SessionData:
-    """Refresh access_token if it expires soon; return possibly-updated data."""
+    """Refresh access_token if it expires soon; return possibly-updated data.
+
+    Single-flight: only ONE concurrent request refreshes; the others wait for its
+    rotated tokens. Without this, two requests in the 30s pre-expiry window (the
+    SPA routinely fans out several at once) both refresh with the same one-time
+    refresh_token — Keycloak rotates on the first, the second fails, and the old
+    behavior then DELETED the live session, force-logging the user out mid-flow.
+    """
     if data.access_expires_at - _REFRESH_LEEWAY_SECONDS > int(time.time()):
         return data
     if data.refresh_token is None:
-        # Nothing to refresh with — caller will fall through to verify (which
-        # will fail because the token is expired) and surface AuthError.
+        # Nothing to refresh with — caller falls through to verify (which fails on
+        # an expired token) and surfaces AuthError.
         return data
-    try:
-        tokens = await oidc.refresh(refresh_token=data.refresh_token)
-    except OIDCError:
-        # Refresh failed — wipe the session so we don't keep retrying.
-        await store.delete(sid)
-        raise AuthError("Session expired") from None
 
-    updated = SessionData(
-        subject=data.subject,
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token or data.refresh_token,
-        id_token=tokens.id_token or data.id_token,
-        access_expires_at=int(time.time()) + tokens.expires_in,
-        created_at=data.created_at,
-    )
-    await store.update(sid, updated)
-    return updated
+    if not await store.acquire_refresh_lock(sid):
+        # Someone else is refreshing. Reuse their rotated tokens once available;
+        # otherwise fall back to our still-within-leeway token (verify may pass).
+        refreshed = await _await_concurrent_refresh(store, sid, data)
+        return refreshed if refreshed is not None else data
+
+    try:
+        try:
+            tokens = await oidc.refresh(refresh_token=data.refresh_token)
+        except OIDCError:
+            # Our refresh failed. A racing request may already have rotated and
+            # stored fresh tokens — prefer those over destroying the session.
+            latest = await store.get(sid)
+            if latest is not None and latest.access_token != data.access_token:
+                return latest
+            await store.delete(sid)
+            raise AuthError("Session expired") from None
+
+        updated = SessionData(
+            subject=data.subject,
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token or data.refresh_token,
+            id_token=tokens.id_token or data.id_token,
+            access_expires_at=int(time.time()) + tokens.expires_in,
+            created_at=data.created_at,
+        )
+        await store.update(sid, updated)
+        return updated
+    finally:
+        await store.release_refresh_lock(sid)
 
 
 async def _principal(
@@ -124,9 +168,9 @@ async def _principal(
 
     data = await _maybe_refresh(sid, data, oidc=oidc, store=store)
 
-    try:
-        principal = await verify_token(
-            data.access_token,
+    async def _verify(token: str) -> Principal:
+        return await verify_token(
+            token,
             jwks=jwks,
             audience=settings.keycloak_audience,
             tenant_claim=settings.keycloak_tenant_claim,
@@ -134,8 +178,25 @@ async def _principal(
             leeway_seconds=settings.keycloak_leeway_seconds,
             expected_token_types=frozenset(settings.keycloak_expected_token_types),
         )
+
+    try:
+        principal = await _verify(data.access_token)
     except AuthError:
-        # Session-backed token failed verification — kill the session.
+        # Our token failed verification. A concurrent request may have refreshed
+        # the session while we held a stale token (e.g. a single-flight loser that
+        # timed out waiting). Re-read once; if a newer token is now stored, verify
+        # THAT before giving up — otherwise we'd delete a session another request
+        # just refreshed, reintroducing the force-logout race in a new path.
+        latest = await store.get(sid)
+        if latest is not None and latest.access_token != data.access_token:
+            try:
+                principal = await _verify(latest.access_token)
+            except AuthError:
+                await store.delete(sid)
+                raise
+            await store.touch(sid)
+            return principal
+        # Session-backed token genuinely failed verification — kill the session.
         await store.delete(sid)
         raise
 

@@ -176,6 +176,12 @@ class Settings(BaseSettings):
             errors.append("CORS_ORIGINS must be set in production")
         if str(self.keycloak_issuer).startswith("http://"):
             errors.append("KEYCLOAK_ISSUER must use HTTPS in production")
+        if not self.keycloak_public_issuer:
+            errors.append(
+                "KEYCLOAK_PUBLIC_ISSUER must be set explicitly in production: tokens carry the "
+                "public issuer as `iss`, and the internal-issuer fallback fails verify_token "
+                "(silent auth outage off the docker-compose path, e.g. Kubernetes)"
+            )
         if self.keycloak_public_issuer and str(self.keycloak_public_issuer).startswith("http://"):
             errors.append("KEYCLOAK_PUBLIC_ISSUER must use HTTPS in production")
         if str(self.public_base_url).startswith("http://"):
