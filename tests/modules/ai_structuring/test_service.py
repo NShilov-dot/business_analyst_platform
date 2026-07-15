@@ -42,6 +42,8 @@ _TS = datetime(2026, 7, 7, 10, 0, tzinfo=UTC)
 _OWNER_ID = UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
 _OWNER_SUB = str(_OWNER_ID)
 _OTHER_ID = UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+_BA_ID = UUID("baaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+_BA_SUB = str(_BA_ID)
 _VERSION_ID = UUID("20000000-0000-0000-0000-000000000001")
 
 _FIELDS = (
@@ -146,7 +148,15 @@ class FakeTicketSink:
         template_version_id: UUID,
         payload: dict[str, object],
     ) -> UUID:
-        self.calls.append({"title": title, "payload": dict(payload), "actor_sub": actor_sub})
+        self.calls.append(
+            {
+                "title": title,
+                "payload": dict(payload),
+                "actor_id": actor_id,
+                "actor_sub": actor_sub,
+                "roles": roles,
+            }
+        )
         return self.ticket_id
 
 
@@ -378,3 +388,42 @@ async def test_llm_failure_stores_nothing(
     assert repo.messages == []
     session = await repo.get_session_by_id(session_id)
     assert session is not None and session.message_count == 0
+
+
+async def test_finalize_by_ba_authors_ticket_as_requester(
+    repo: FakeRepo, sink: FakeTicketSink, publisher: RecordingPublisher
+) -> None:
+    """#3: a BA finalizing the requester's session must author the ticket as the
+    REQUESTER (session owner), not as the BA who clicked finalize — the value gate
+    and requester-scoped analytics depend on the author being the requester."""
+    llm = ScriptedLlm(
+        [
+            LlmTurn(
+                reply="ок",
+                draft={"problem": "Ручной ввод", "metric": "-30%"},
+                title="Автоподстановка тарифа",
+                complete=True,
+            )
+        ]
+    )
+    service = _service(repo, llm, sink, publisher)
+    session_id = await _start(service)  # session owner = _OWNER_ID
+    await service.send_message(
+        session_id=session_id,
+        actor_id=_OWNER_ID,
+        roles=frozenset(),
+        command=SendMessageCommand(content="..."),
+    )
+
+    # A BA (not the requester) finalizes on the requester's behalf.
+    await service.finalize(
+        session_id=session_id,
+        actor_id=_BA_ID,
+        actor_sub=_BA_SUB,
+        roles=frozenset({"ba"}),
+    )
+
+    assert sink.calls[0]["actor_id"] == _OWNER_ID
+    assert sink.calls[0]["actor_sub"] == _OWNER_SUB
+    # the BA's elevated roles must NOT tag along — filed as the requester baseline
+    assert sink.calls[0]["roles"] == frozenset({"tenant_user"})

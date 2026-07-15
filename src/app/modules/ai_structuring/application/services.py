@@ -215,10 +215,16 @@ class ChatIntakeService:
             )
 
         title = self._derive_title(session)
+        # Author the ticket as the session's REQUESTER, not the caller. A BA or
+        # admin may finalize on the requester's behalf (allowed by _load_owned),
+        # but the resulting ticket's author must be the requester — the double-
+        # acceptance value gate and requester-scoped analytics depend on it. Roles
+        # are the requester's baseline (any-member), NOT the caller's: the ticket
+        # is filed AS the requester, so a BA's elevated roles must not tag along.
         ticket_id = await self.ticket_sink.create_and_submit(
-            actor_id=actor_id,
-            actor_sub=actor_sub,
-            roles=roles,
+            actor_id=session.requester_id,
+            actor_sub=session.requester_sub,
+            roles=frozenset({"tenant_user"}),
             title=title,
             template_version_id=session.template_version_id,
             payload=session.draft,
