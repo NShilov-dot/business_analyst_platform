@@ -28,11 +28,13 @@ from app.modules.tickets.application.dtos import (
     CloseCommand,
     CreateTicketCommand,
     FinishWorkCommand,
+    ReplaceSubmissionCommand,
     RequestAcceptanceCommand,
     ReturnToWorkCommand,
     StartWorkCommand,
     SubmitCommand,
     TriageAcceptCommand,
+    UpdateTicketCommand,
 )
 from app.modules.tickets.application.services import TicketService
 from app.modules.tickets.domain.entities import (
@@ -43,6 +45,7 @@ from app.modules.tickets.domain.entities import (
     OpenDefectsResult,
     StatusTransition,
     Ticket,
+    TicketPriority,
     TicketStatus,
     TriageDecision,
 )
@@ -50,7 +53,9 @@ from app.modules.tickets.domain.errors import (
     AcceptanceGateIncompleteError,
     AttestationNotAllowedError,
     SpecNotApprovedError,
+    SubmissionInvalidError,
     TicketAccessDeniedError,
+    TicketValidationError,
 )
 from app.modules.tickets.infrastructure.gates import (
     AttestationAcceptanceGate,
@@ -197,6 +202,7 @@ class FakeTracker:
 class RecordingPublisher:
     def __init__(self) -> None:
         self.events: list[tuple[str, UUID, str]] = []
+        self.records: list[dict[str, Any]] = []
 
     async def __call__(
         self,
@@ -208,6 +214,14 @@ class RecordingPublisher:
         after: dict[str, Any] | None = None,
     ) -> None:
         self.events.append((entity_type, entity_id, action))
+        self.records.append(
+            {
+                "entity_type": entity_type,
+                "action": action,
+                "before": before,
+                "after": after,
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -555,3 +569,103 @@ async def test_spec_approval_honours_explicit_spec_ref(service: TicketService) -
     )
 
     assert attestation.spec_ref == "confluence://external-spec"
+
+
+class _FailingValidator:
+    """SubmissionValidator that reports one field error."""
+
+    async def validate_submission(
+        self, *, template_version_id: UUID, payload: dict[str, object]
+    ) -> list[Any]:
+        class _Err:
+            key = "problem"
+            message = "required"
+
+        return [_Err()]
+
+
+class _ArchivedVersionInfo:
+    """Every version reads as not-published (e.g. archived after ticket creation)."""
+
+    async def is_published_version(self, version_id: UUID) -> bool:
+        return False
+
+
+async def test_update_ticket_audits_real_field_deltas(
+    service: TicketService, publisher: RecordingPublisher
+) -> None:
+    """#6: the 'updated' event must record before/after of the CHANGED fields."""
+    ticket = await _create_ticket(service)
+    await service.update_ticket(
+        ticket_id=ticket.id,
+        actor_id=_AUTHOR_ID,
+        actor_sub=_AUTHOR_SUB,
+        roles=frozenset({"tenant_user"}),
+        command=UpdateTicketCommand(
+            title="Новое название",
+            description=None,
+            description_set=False,
+            priority=TicketPriority.HIGH,
+            priority_set=True,
+        ),
+    )
+    updated = [r for r in publisher.records if r["action"] == "updated"]
+    assert len(updated) == 1
+    rec = updated[0]
+    assert rec["before"]["title"] == "Автоподстановка тарифа"
+    assert rec["after"]["title"] == "Новое название"
+    assert rec["before"]["priority"] is None
+    assert rec["after"]["priority"] == "high"
+    # description was not touched → not in the delta
+    assert "description" not in rec["after"]
+
+
+async def test_replace_submission_rejects_invalid_payload(service: TicketService) -> None:
+    """#5: an invalid replacement payload is rejected up front, not at submit-time."""
+    ticket = await _create_ticket(service)
+    service.validator = _FailingValidator()  # type: ignore[assignment]
+    with pytest.raises(SubmissionInvalidError):
+        await service.replace_submission(
+            ticket_id=ticket.id,
+            actor_id=_AUTHOR_ID,
+            actor_sub=_AUTHOR_SUB,
+            roles=frozenset({"tenant_user"}),
+            command=ReplaceSubmissionCommand(
+                template_version_id=_TPL_VERSION_ID, payload={"problem": ""}
+            ),
+        )
+
+
+async def test_submit_rejects_unpublished_template_version(service: TicketService) -> None:
+    """#4: a submission whose template version was archived cannot enter triage."""
+    ticket = await _create_ticket(service)
+    service.version_info = _ArchivedVersionInfo()  # type: ignore[assignment]
+    with pytest.raises(TicketValidationError):
+        await service.submit(
+            ticket_id=ticket.id,
+            actor_id=_AUTHOR_ID,
+            actor_sub=_AUTHOR_SUB,
+            roles=frozenset({"tenant_user"}),
+            command=SubmitCommand(),
+        )
+
+
+async def test_update_ticket_noop_patch_emits_no_event(
+    service: TicketService, publisher: RecordingPublisher
+) -> None:
+    """A PATCH that touches nothing must not bump the ticket or emit an event."""
+    ticket = await _create_ticket(service)
+    await service.update_ticket(
+        ticket_id=ticket.id,
+        actor_id=_AUTHOR_ID,
+        actor_sub=_AUTHOR_SUB,
+        roles=frozenset({"tenant_user"}),
+        command=UpdateTicketCommand(
+            title=None,
+            description=None,
+            description_set=False,
+            priority=None,
+            priority_set=False,
+        ),
+    )
+    assert not any(r["action"] == "updated" for r in publisher.records)

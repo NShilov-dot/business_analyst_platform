@@ -64,6 +64,7 @@ from app.modules.tickets.domain.errors import (
     AttestationDuplicateError,
     AttestationNotAllowedError,
     SpecNotApprovedError,
+    SubmissionInvalidError,
     TicketAccessDeniedError,
     TicketNotFoundError,
     TicketTransitionForbiddenError,
@@ -273,8 +274,24 @@ class TicketService:
         ticket = await self._load_or_404(ticket_id)
         self._assert_can_manage_ticket(ticket, actor_id=actor_id, roles=roles)
 
+        # No-op PATCH: nothing to change → don't bump updated_at or emit a
+        # misleading empty-delta audit event.
+        if command.title is None and not command.description_set and not command.priority_set:
+            return ticket
+
         now = self.clock()
-        before_status = ticket.status
+        # Capture the pre-update values of ONLY the fields this command touches,
+        # so the audit event records the real «было/стало» delta (previously it
+        # logged the unchanged status, making it impossible to see what changed).
+        before: dict[str, object | None] = {}
+        after: dict[str, object | None] = {}
+        if command.title is not None:
+            before["title"] = ticket.title
+        if command.description_set:
+            before["description"] = ticket.description
+        if command.priority_set:
+            before["priority"] = ticket.priority.value if ticket.priority else None
+
         ticket.update_details(
             title=command.title,
             description=command.description if command.description_set else None,
@@ -285,12 +302,19 @@ class TicketService:
         )
         await self.repo.update_ticket(ticket)
 
+        if command.title is not None:
+            after["title"] = ticket.title
+        if command.description_set:
+            after["description"] = ticket.description
+        if command.priority_set:
+            after["priority"] = ticket.priority.value if ticket.priority else None
+
         await self.publisher(
             "ticket",
             ticket_id,
             "updated",
-            before={"status": before_status},
-            after={"status": ticket.status},
+            before=before,
+            after=after,
         )
         return ticket
 
@@ -318,6 +342,18 @@ class TicketService:
         if not await self.version_info.is_published_version(command.template_version_id):
             raise TicketValidationError(
                 f"Template version {command.template_version_id} is not published"
+            )
+
+        # Validate the payload NOW — an invalid replacement must not become the
+        # authoritative submission and surface only later at submit-time.
+        errors = await self.validator.validate_submission(
+            template_version_id=command.template_version_id,
+            payload=command.payload,
+        )
+        if errors:
+            raise SubmissionInvalidError(
+                "Submission has validation errors",
+                field_errors=[{"key": e.key, "message": e.message} for e in errors],
             )
 
         # Determine next version number
@@ -372,13 +408,22 @@ class TicketService:
         if current_submission is None:
             raise TicketValidationError("Cannot submit a ticket with no intake submission")
 
+        # The submission's template version must still be published — a BA may
+        # have archived it between ticket creation and submit; an archived/draft
+        # version must not slip into triage as the structured-intake reference.
+        if not await self.version_info.is_published_version(
+            current_submission.template_version_id
+        ):
+            raise TicketValidationError(
+                f"Template version {current_submission.template_version_id} is not "
+                "published; cannot submit"
+            )
+
         errors = await self.validator.validate_submission(
             template_version_id=current_submission.template_version_id,
             payload=current_submission.payload,
         )
         if errors:
-            from app.modules.tickets.domain.errors import SubmissionInvalidError
-
             raise SubmissionInvalidError(
                 "Submission has validation errors",
                 field_errors=[{"key": e.key, "message": e.message} for e in errors],
