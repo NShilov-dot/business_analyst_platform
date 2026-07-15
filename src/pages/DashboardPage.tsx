@@ -1,7 +1,6 @@
 import {
   BadgeCheck,
   Calendar,
-  CheckCheck,
   Circle,
   Clock,
   FileText,
@@ -376,13 +375,6 @@ export default function DashboardPage() {
     queryFn: () => ticketsApi.list({ limit: 100 }),
   })
 
-  // BA/admin-only stat: intake share breakdown. 403 for other roles — handled gracefully.
-  const shareQ = useQuery({
-    queryKey: ['tickets', 'intake-share'],
-    queryFn: () => ticketsApi.intakeShare(),
-    retry: false,
-  })
-
   // Analytics: ticket flow chart
   const flowQ = useQuery({
     queryKey: ['analytics', 'flow'],
@@ -396,7 +388,6 @@ export default function DashboardPage() {
   })
 
   const tickets = ticketsQ.data?.data ?? []
-  const share = shareQ.data?.data
   const flowPoints = flowQ.data?.data.points ?? []
   const actItems = actQ.data?.data ?? []
 
@@ -438,21 +429,6 @@ export default function DashboardPage() {
 
   const maxCount = Math.max(1, ...WORKFLOW_ORDER.map((k) => counts[k]))
 
-  // KPI card 2: templated share
-  let templateShareValue: string
-  let templateShareCaption: string
-  if (share !== undefined) {
-    templateShareValue = `${Math.round(share.templated_share * 100)}%`
-    templateShareCaption = `${share.templated} из ${share.total} через шаблон`
-  } else if (shareQ.isLoading) {
-    templateShareValue = '…'
-    templateShareCaption = 'загрузка'
-  } else {
-    // 403 or other error — endpoint is BA/admin-only
-    templateShareValue = '—'
-    templateShareCaption = 'нужна роль BA'
-  }
-
   if (ticketsQ.isLoading) {
     return (
       <div className="animate-vfade">
@@ -461,10 +437,31 @@ export default function DashboardPage() {
     )
   }
 
+  if (ticketsQ.isError) {
+    return (
+      <div className="animate-vfade">
+        <div className="mx-auto mt-6 max-w-[460px] rounded-2xl border border-border bg-card p-8 text-center">
+          <XCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+          <div className="text-sm font-medium">Не удалось загрузить данные дашборда</div>
+          <div className="mt-1 text-[12.5px] text-muted-foreground">
+            Проверьте соединение и попробуйте снова.
+          </div>
+          <button
+            type="button"
+            onClick={() => void ticketsQ.refetch()}
+            className="mt-4 rounded-xl border border-input bg-card px-4 py-2 text-[13px] font-semibold hover:bg-muted"
+          >
+            Повторить
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="animate-vfade">
-      {/* KPI row — 5 cards, all derived from real data */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5">
+      {/* KPI row — 4 cards, all derived from real data */}
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {/* 1. Total tickets */}
         <div className="rounded-2xl border border-border bg-card p-[18px]">
           <div className="mb-3.5 flex items-center justify-between">
@@ -477,21 +474,7 @@ export default function DashboardPage() {
           <div className="mt-0.5 text-[11px] text-muted-foreground">в системе</div>
         </div>
 
-        {/* 2. Templated share — requires BA/admin role for the stats endpoint */}
-        <div className="rounded-2xl border border-border bg-card p-[18px]">
-          <div className="mb-3.5 flex items-center justify-between">
-            <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
-              <CheckCheck className="h-[19px] w-[19px]" />
-            </div>
-          </div>
-          <div className="text-[27px] font-bold leading-none tracking-tight">{templateShareValue}</div>
-          <div className="mt-1.5 text-[12.5px] font-medium leading-tight">Запросов через шаблон</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {templateShareCaption} · цель ≥ 80%
-          </div>
-        </div>
-
-        {/* 3. Active (non-terminal) */}
+        {/* 2. Active (non-terminal) */}
         <div className="rounded-2xl border border-border bg-card p-[18px]">
           <div className="mb-3.5 flex items-center justify-between">
             <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
@@ -503,7 +486,7 @@ export default function DashboardPage() {
           <div className="mt-0.5 text-[11px] text-muted-foreground">все незакрытые статусы</div>
         </div>
 
-        {/* 4. Closed */}
+        {/* 3. Closed */}
         <div className="rounded-2xl border border-border bg-card p-[18px]">
           <div className="mb-3.5 flex items-center justify-between">
             <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
@@ -515,7 +498,7 @@ export default function DashboardPage() {
           <div className="mt-0.5 text-[11px] text-muted-foreground">завершены успешно</div>
         </div>
 
-        {/* 5. Rejected */}
+        {/* 4. Rejected */}
         <div className="rounded-2xl border border-border bg-card p-[18px]">
           <div className="mb-3.5 flex items-center justify-between">
             <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
@@ -549,6 +532,18 @@ export default function DashboardPage() {
           {flowQ.isLoading ? (
             <div className="mt-4 flex min-h-[152px] animate-pulse items-center justify-center rounded-xl bg-muted/30">
               <div className="h-3 w-24 rounded bg-muted" />
+            </div>
+          ) : flowQ.isError ? (
+            <div className="mt-4 flex min-h-[152px] flex-col items-center justify-center gap-2 rounded-xl bg-muted/30 text-center">
+              <XCircle className="h-6 w-6 text-destructive" />
+              <p className="text-[12.5px] text-muted-foreground">Не удалось загрузить поток заявок</p>
+              <button
+                type="button"
+                onClick={() => void flowQ.refetch()}
+                className="text-[12px] font-semibold text-primary hover:underline"
+              >
+                Повторить
+              </button>
             </div>
           ) : (
             <FlowChart points={flowPoints} />
@@ -682,6 +677,18 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          ) : actQ.isError ? (
+            <div className="flex min-h-[120px] flex-col items-center justify-center gap-2">
+              <XCircle className="h-6 w-6 text-destructive" />
+              <p className="text-[13px] text-muted-foreground">Не удалось загрузить события</p>
+              <button
+                type="button"
+                onClick={() => void actQ.refetch()}
+                className="text-[12px] font-semibold text-primary hover:underline"
+              >
+                Повторить
+              </button>
             </div>
           ) : actItems.length === 0 ? (
             <div className="flex min-h-[120px] items-center justify-center">

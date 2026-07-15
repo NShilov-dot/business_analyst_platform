@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
@@ -60,6 +61,7 @@ function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string
 
 export default function IntakeChatPage() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [fields, setFields] = useState<FieldState[]>([])
@@ -127,13 +129,16 @@ export default function IntakeChatPage() {
     try {
       const { data } = await intakeChatApi.finalize(detail.session.id)
       setDetail(data)
+      // The finalize created + submitted a real ticket — drop stale board/detail
+      // caches so it shows up immediately (was invisible for up to staleTime=30s).
+      void qc.invalidateQueries({ queryKey: ['tickets'] })
       toast.success(`Заявка создана и отправлена на триаж (${data.session.ticket_id})`)
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
       setFinalizing(false)
     }
-  }, [detail, finalizing])
+  }, [detail, finalizing, qc])
 
   if (fatal) {
     return (

@@ -105,14 +105,6 @@ export interface TicketDetail {
   triage_decisions: TriageDecision[]
 }
 
-export interface IntakeShare {
-  total: number
-  free_form: number
-  templated: number
-  templated_share: number
-  by_template_version: { template_version_id: string; count: number }[]
-}
-
 export interface ListTicketsParams {
   status?: TicketStatus
   department_id?: string
@@ -170,7 +162,6 @@ export const ticketsApi = {
   get: (id: string) => api.get<Envelope<TicketDetail>>(`/v1/tickets/${id}`),
   transitions: (id: string) => api.get<Envelope<Transition[]>>(`/v1/tickets/${id}/transitions`),
   attestations: (id: string) => api.get<Envelope<Attestation[]>>(`/v1/tickets/${id}/attestations`),
-  intakeShare: () => api.get<Envelope<IntakeShare>>('/v1/tickets/stats/intake-share'),
 
   create: (input: CreateTicketInput) => api.post<Envelope<TicketDetail>>('/v1/tickets', input),
   submit: (id: string) => api.post<Envelope<Ticket>>(`/v1/tickets/${id}/submit`),
