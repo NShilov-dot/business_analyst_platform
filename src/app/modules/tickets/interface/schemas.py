@@ -19,7 +19,6 @@ from app.modules.tickets.application.dtos import (
     AttestFormalDodCommand,
     AttestSpecApprovalCommand,
     CreateTicketCommand,
-    IntakeShareStats,
     RejectCommand,
     ReplaceSubmissionCommand,
     RequestAcceptanceCommand,
@@ -163,7 +162,7 @@ class AssignRequest(BaseModel):
 class AttestSpecApprovalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Optional: the ticket itself is the ТЗ, so the server self-references it when
+    # Optional: the ticket itself is the spec, so the server self-references it when
     # omitted. An explicit external ref (Confluence/tracker URL) is still accepted.
     spec_ref: str | None = Field(default=None, min_length=1, max_length=500)
     agreed_with_subject: str = Field(min_length=1, max_length=255)
@@ -337,34 +336,6 @@ class TicketDetailResponse(BaseModel):
             attestations=[AttestationResponse.from_entity(a) for a in detail.attestations],
             triage_decisions=[
                 TriageDecisionResponse.from_entity(d) for d in detail.triage_decisions
-            ],
-        )
-
-
-class IntakeShareRowResponse(BaseModel):
-    template_version_id: UUID
-    count: int
-
-
-class IntakeShareResponse(BaseModel):
-    total: int
-    free_form: int
-    templated: int
-    templated_share: float
-    by_template_version: list[IntakeShareRowResponse]
-
-    @classmethod
-    def from_stats(cls, stats: IntakeShareStats) -> IntakeShareResponse:
-        return cls(
-            total=stats.total,
-            free_form=stats.free_form,
-            templated=stats.templated,
-            templated_share=stats.templated_share,
-            by_template_version=[
-                IntakeShareRowResponse(
-                    template_version_id=row.template_version_id, count=row.count
-                )
-                for row in stats.by_template_version
             ],
         )
 

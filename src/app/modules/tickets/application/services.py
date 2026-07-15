@@ -23,7 +23,6 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.core.events import EventPublisher
-from app.modules.intake_templates.domain.entities import FREE_FORM_VERSION_ID
 from app.modules.intake_templates.domain.ports import SubmissionValidator
 from app.modules.tickets.application.dtos import (
     AssignCommand,
@@ -33,9 +32,6 @@ from app.modules.tickets.application.dtos import (
     CloseCommand,
     CreateTicketCommand,
     FinishWorkCommand,
-    IntakeShareQuery,
-    IntakeShareRow,
-    IntakeShareStats,
     ListTicketsQuery,
     RejectCommand,
     ReplaceSubmissionCommand,
@@ -259,34 +255,6 @@ class TicketService:
         """Gate attestation records by cycle (any authenticated member)."""
         await self._load_or_404(ticket_id)
         return await self.repo.list_attestations(ticket_id)
-
-    async def intake_share_stats(
-        self,
-        *,
-        roles: frozenset[str],
-        query: IntakeShareQuery,
-    ) -> IntakeShareStats:
-        """intake-share metric (ba or admins)."""
-        if not _is_ba_or_admin(roles):
-            raise TicketAccessDeniedError("intake-share stats require ba or admin role")
-        rows = await self.repo.intake_share(
-            created_from=query.created_from,
-            created_to=query.created_to,
-        )
-        total = sum(count for _, count in rows)
-        free_form = sum(
-            count for version_id, count in rows if version_id == FREE_FORM_VERSION_ID
-        )
-        templated = total - free_form
-        share = templated / total if total > 0 else 0.0
-        by_version = [IntakeShareRow(template_version_id=vid, count=cnt) for vid, cnt in rows]
-        return IntakeShareStats(
-            total=total,
-            free_form=free_form,
-            templated=templated,
-            templated_share=share,
-            by_template_version=by_version,
-        )
 
     # ================================================================== #
     # Metadata update                                                     #
@@ -729,7 +697,7 @@ class TicketService:
                 "A spec_approved attestation (cycle 0) already exists for this ticket"
             )
 
-        # In this product the ticket itself is the ТЗ. When no external spec
+        # In this product the ticket itself is the approved spec. When no external
         # reference is supplied, pin a self-reference to the ticket and the exact
         # intake-submission version being approved — so the signed attestation
         # still records precisely WHAT was approved (satisfies the spec_ref invariant).

@@ -27,6 +27,17 @@ class ChatValidationError(DomainError):
     http_status = 422
 
 
+class ChatConcurrentUpdateError(DomainError):
+    """Two requests raced on the same session's message sequence.
+
+    Surfaced when a concurrent send violates the (session_id, seq) uniqueness —
+    a 409 the client can retry, not an uncaught 500.
+    """
+
+    code = "CHAT_CONCURRENT_UPDATE"
+    http_status = 409
+
+
 class DraftIncompleteError(DomainError):
     """Finalize was requested while the draft still fails template validation.
 

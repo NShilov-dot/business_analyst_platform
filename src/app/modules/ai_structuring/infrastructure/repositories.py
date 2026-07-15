@@ -6,6 +6,7 @@ from typing import cast
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.ai_structuring.domain.entities import (
@@ -14,7 +15,11 @@ from app.modules.ai_structuring.domain.entities import (
     ChatSession,
     ChatSessionStatus,
 )
+from app.modules.ai_structuring.domain.errors import ChatConcurrentUpdateError
 from app.modules.ai_structuring.infrastructure.models import ChatMessageRow, ChatSessionRow
+
+# Postgres SQLSTATE for a unique-constraint violation (vs FK/CHECK/NOT-NULL).
+_PG_UNIQUE_VIOLATION = "23505"
 
 
 def _session_to_entity(row: ChatSessionRow) -> ChatSession:
@@ -108,7 +113,17 @@ class SqlAlchemyChatSessionRepository:
             created_at=message.created_at,
         )
         self._session.add(row)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            # ONLY a unique violation (sqlstate 23505) means a concurrent send
+            # computed the same (session_id, seq) → retryable 409. FK / CHECK
+            # violations are real bugs; re-raise rather than mask them as a race.
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            raise ChatConcurrentUpdateError(
+                "Another message was recorded concurrently; please retry."
+            ) from exc
 
     async def list_messages(self, session_id: UUID) -> list[ChatMessage]:
         rows = (

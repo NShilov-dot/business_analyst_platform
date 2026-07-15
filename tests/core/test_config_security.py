@@ -25,6 +25,7 @@ def _prod(**overrides: object) -> Settings:
         cors_origins=["https://fe.x"],
         trusted_hosts=["api.x"],
         session_encryption_keys=[generate_key()],
+        keycloak_public_issuer="https://kc/realms/bap",
         **_BASE,
     )
     cfg.update(overrides)
@@ -56,6 +57,7 @@ def test_valid_prod_config_passes() -> None:
         ({"session_encryption_keys": []}, "SESSION_ENCRYPTION_KEYS"),
         ({"oidc_client_secret": "change-me-in-prod"}, "OIDC_CLIENT_SECRET"),
         ({"public_base_url": "http://api.x"}, "PUBLIC_BASE_URL"),
+        ({"keycloak_public_issuer": None}, "KEYCLOAK_PUBLIC_ISSUER"),
     ],
 )
 def test_prod_validation_flags_each_gap(override: dict[str, object], needle: str) -> None:

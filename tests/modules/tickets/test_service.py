@@ -158,11 +158,6 @@ class FakeRepo:
     async def list_attestations(self, ticket_id: UUID) -> list[GateAttestation]:
         return [a for a in self.attestations if a.ticket_id == ticket_id]
 
-    async def intake_share(
-        self, *, created_from: datetime | None, created_to: datetime | None
-    ) -> list[tuple[UUID, int]]:
-        return []
-
 
 class FakeValidator:
     """SubmissionValidator returning no errors."""
@@ -507,7 +502,7 @@ async def test_triage_requires_ba_role(service: TicketService) -> None:
 
 
 async def _advance_to_spec_approval(service: TicketService, ticket_id: UUID) -> None:
-    """Drive a fresh ticket to status=spec_approval (ready to sign the ТЗ)."""
+    """Drive a fresh ticket to status=spec_approval (ready to sign the spec)."""
     await service.submit(
         ticket_id=ticket_id,
         actor_id=_AUTHOR_ID,
@@ -530,7 +525,7 @@ async def _advance_to_spec_approval(service: TicketService, ticket_id: UUID) -> 
 async def test_spec_approval_defaults_spec_ref_to_ticket_self_reference(
     service: TicketService,
 ) -> None:
-    """The ticket IS the ТЗ: when spec_ref is omitted the service pins a
+    """The ticket IS the spec: when spec_ref is omitted the service pins a
     self-reference to the ticket and its current intake-submission version."""
     ticket = await _create_ticket(service)
     await _advance_to_spec_approval(service, ticket.id)

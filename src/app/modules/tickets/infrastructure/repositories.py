@@ -10,6 +10,7 @@ from typing import cast
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.tickets.domain.entities import (
@@ -26,6 +27,7 @@ from app.modules.tickets.domain.entities import (
     TriageDecision,
     TriageOutcome,
 )
+from app.modules.tickets.domain.errors import AttestationDuplicateError
 from app.modules.tickets.infrastructure.models import (
     AssignmentRow,
     GateAttestationRow,
@@ -34,6 +36,10 @@ from app.modules.tickets.infrastructure.models import (
     TicketStatusTransitionRow,
     TriageDecisionRow,
 )
+
+# Postgres SQLSTATE for a unique-constraint violation (vs FK/CHECK/NOT-NULL).
+_PG_UNIQUE_VIOLATION = "23505"
+
 
 # ---------------------------------------------------------------------------
 # Row <-> entity mapping
@@ -356,7 +362,20 @@ class SqlAlchemyTicketRepository:
             attested_at=attestation.attested_at,
         )
         self._session.add(row)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            # ONLY a unique violation (sqlstate 23505) means a racing request
+            # inserted the same (ticket_id, kind, acceptance_cycle) between the
+            # service's duplicate check and this flush → the documented 409.
+            # FK / CHECK / NOT-NULL violations are real bugs; re-raise them so
+            # they don't masquerade as a duplicate.
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            raise AttestationDuplicateError(
+                f"A {attestation.kind.value} attestation for cycle "
+                f"{attestation.acceptance_cycle} already exists"
+            ) from exc
 
     async def get_attestation(
         self,
@@ -382,38 +401,3 @@ class SqlAlchemyTicketRepository:
             )
         ).all()
         return [_attestation_to_entity(r) for r in rows]
-
-    # -- Metrics -----------------------------------------------------------
-
-    async def intake_share(
-        self,
-        *,
-        created_from: datetime | None,
-        created_to: datetime | None,
-    ) -> list[tuple[UUID, int]]:
-        # Each ticket counted once — by its highest-version submission.
-        latest = (
-            select(
-                IntakeSubmissionRow.ticket_id,
-                func.max(IntakeSubmissionRow.version).label("version"),
-            )
-            .group_by(IntakeSubmissionRow.ticket_id)
-            .subquery()
-        )
-        q = (
-            select(IntakeSubmissionRow.template_version_id, func.count())
-            .join(
-                latest,
-                (IntakeSubmissionRow.ticket_id == latest.c.ticket_id)
-                & (IntakeSubmissionRow.version == latest.c.version),
-            )
-            .join(TicketRow, TicketRow.id == IntakeSubmissionRow.ticket_id)
-        )
-        if created_from is not None:
-            q = q.where(TicketRow.created_at >= created_from)
-        if created_to is not None:
-            q = q.where(TicketRow.created_at < created_to)
-        q = q.group_by(IntakeSubmissionRow.template_version_id)
-
-        result = await self._session.execute(q)
-        return [(row[0], row[1]) for row in result.all()]

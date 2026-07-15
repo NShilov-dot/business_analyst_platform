@@ -165,19 +165,20 @@ async def callback(
             state_prefix=state[:6],
             cookie_present=cookie_state is not None,
         )
-        # Burn the Redis entry so it can't be retried by anyone, and clear the
-        # cookie so a partial relay doesn't leave a one-shot replay primitive.
+        # Burn the Redis entry so this (code, state) can't be retried by anyone.
         await sessions.pop_login_state(state)
-        resp_err = JSONResponse(
-            status_code=400,
-            content={
-                "error": {
-                    "code": "AUTH_FLOW_ERROR",
-                    "message": "State binding failed",
-                    "details": [],
-                }
-            },
-        )
+        # Self-heal instead of dead-ending on a raw 400. The oidc_state cookie is
+        # frequently absent/stale on the FIRST attempt — it has a 5-min TTL, and
+        # an abandoned earlier flow (or cookie churn) can leave it missing or
+        # mismatched. Bounce back to the SPA, which re-runs /login with a FRESH
+        # state; Keycloak then silently re-authenticates from its SSO session and
+        # the retry's cookie matches. The SPA's redirect loop-breaker (3 / 10s)
+        # stops a genuinely broken cookie from looping forever.
+        #
+        # Security is preserved: NO session is minted here, so a relayed
+        # (code, state) pair still cannot fixate a session — the failure only
+        # restarts the legitimate flow in the browser that actually navigated here.
+        resp_err = RedirectResponse(f"{frontend}/?auth_error=session", status_code=302)
         _clear_oidc_state_cookie(resp_err, settings)
         return resp_err
 

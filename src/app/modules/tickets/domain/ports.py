@@ -113,21 +113,6 @@ class TicketRepository(Protocol):
 
     async def list_attestations(self, ticket_id: UUID) -> list[GateAttestation]: ...
 
-    # -- Metrics -----------------------------------------------------------
-
-    async def intake_share(
-        self,
-        *,
-        created_from: datetime | None,
-        created_to: datetime | None,
-    ) -> list[tuple[UUID, int]]:
-        """Return [(template_version_id, count)] by current submission.
-
-        Each ticket is counted once — by its highest-version submission's
-        template_version_id.  Used by the intake-share stats endpoint.
-        """
-        ...
-
 
 # ---------------------------------------------------------------------------
 # TrackerPort

@@ -32,6 +32,7 @@ logger = structlog.get_logger(__name__)
 
 _SESSION_KEY_PREFIX = "sess:"
 _LOGIN_KEY_PREFIX = "login:"
+_REFRESH_LOCK_PREFIX = "refresh_lock:"
 _LOGIN_TTL_SECONDS = 300  # 5 min — Keycloak login round-trip should fit
 
 
@@ -151,6 +152,27 @@ class SessionStore:
 
     async def delete(self, sid: str) -> None:
         await self._redis.delete(_SESSION_KEY_PREFIX + sid)
+
+    # ------------------------------------------------------------------
+    # Refresh single-flight lock
+    # ------------------------------------------------------------------
+
+    async def acquire_refresh_lock(self, sid: str, *, ttl_seconds: int = 10) -> bool:
+        """Best-effort single-flight guard for token refresh.
+
+        Returns True if THIS caller acquired the right to refresh. Concurrent
+        callers get False and should wait for the winner's rotated tokens rather
+        than refreshing in parallel (which would burn the one-time refresh_token
+        and, previously, delete the live session out from under the winner).
+        The short TTL guarantees the lock self-heals if the holder crashes.
+        """
+        acquired = await self._redis.set(
+            _REFRESH_LOCK_PREFIX + sid, "1", nx=True, ex=ttl_seconds
+        )
+        return bool(acquired)
+
+    async def release_refresh_lock(self, sid: str) -> None:
+        await self._redis.delete(_REFRESH_LOCK_PREFIX + sid)
 
     # ------------------------------------------------------------------
     # Login state (pre-callback OAuth scratchpad)

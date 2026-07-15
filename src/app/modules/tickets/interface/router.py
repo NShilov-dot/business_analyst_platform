@@ -13,7 +13,6 @@ SubmissionValidator, and the Phase-1 NullTrackerGateway.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -29,7 +28,6 @@ from app.modules.intake_templates.infrastructure.repositories import (
 from app.modules.tickets.application.dtos import (
     CloseCommand,
     FinishWorkCommand,
-    IntakeShareQuery,
     ListTicketsQuery,
     StartWorkCommand,
     SubmitCommand,
@@ -56,7 +54,6 @@ from app.modules.tickets.interface.schemas import (
     CommentRequest,
     CreateTicketRequest,
     Envelope,
-    IntakeShareResponse,
     PagedEnvelope,
     RejectRequest,
     ReplaceSubmissionRequest,
@@ -155,24 +152,6 @@ async def list_tickets(
         ),
     )
     return PagedEnvelope.from_page(page)
-
-
-@router.get(
-    "/stats/intake-share",
-    response_model=Envelope[IntakeShareResponse],
-    summary="Intake-share metric: templated vs free-form (ba / admin)",
-)
-async def intake_share_stats(
-    principal: PrincipalDep,
-    service: ServiceDep,
-    created_from: Annotated[datetime | None, Query()] = None,
-    created_to: Annotated[datetime | None, Query()] = None,
-) -> Envelope[IntakeShareResponse]:
-    stats = await service.intake_share_stats(
-        roles=principal.roles,
-        query=IntakeShareQuery(created_from=created_from, created_to=created_to),
-    )
-    return Envelope(data=IntakeShareResponse.from_stats(stats))
 
 
 @router.get(
