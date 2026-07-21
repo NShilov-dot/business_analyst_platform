@@ -11,8 +11,6 @@ import { ticketsApi, type Ticket } from '@/api/tickets'
 import { useAuth } from '@/auth/AuthProvider'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 
-// Kanban board over the 7-state workflow (+ the «rejected» terminal column).
-
 const COLUMNS: TicketStatus[] = [...WORKFLOW_ORDER, 'rejected']
 
 function TicketCard({ ticket, currentSubject }: { ticket: Ticket; currentSubject: string }) {

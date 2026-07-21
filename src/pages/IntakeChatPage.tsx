@@ -20,7 +20,6 @@ import {
   type SessionDetail,
 } from '@/api/intakeChat'
 
-// Приветствие рендерится на клиенте: бэкенд хранит только реальные ходы диалога.
 const GREETING =
   'Здравствуйте! Я помогу оформить бизнес-заявку. Расскажите, какая проблема ' +
   'или потребность привела вас сюда — дальше я задам уточняющие вопросы.'
@@ -152,6 +151,9 @@ export default function IntakeChatPage() {
   const submitted = detail?.session.status === 'submitted'
   const requiredFields = fields.filter((f) => f.required)
   const filledRequired = requiredFields.filter((f) => !f.missing).length
+  const pct = requiredFields.length
+    ? Math.round((filledRequired / requiredFields.length) * 100)
+    : 0
 
   return (
     <div className="animate-vfade grid h-full max-w-[1240px] grid-cols-1 items-start gap-[18px] lg:grid-cols-[1fr_340px]">
@@ -220,12 +222,19 @@ export default function IntakeChatPage() {
           <div className="mb-3.5 text-[11.5px] text-muted-foreground">
             {detail?.session.draft_title ?? 'Заголовок появится по ходу диалога'}
           </div>
+          <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
+            <span className="font-medium text-muted-foreground">Готовность заявки</span>
+            <span className="font-semibold tabular-nums">
+              {filledRequired}/{requiredFields.length} · {pct}%
+            </span>
+          </div>
           <div className="mb-4 h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-primary transition-all"
-              style={{
-                width: `${requiredFields.length ? (filledRequired / requiredFields.length) * 100 : 0}%`,
-              }}
+              className={cn(
+                'h-full rounded-full transition-all',
+                pct === 100 ? 'bg-success' : 'bg-primary',
+              )}
+              style={{ width: `${pct}%` }}
             />
           </div>
           <div className="flex flex-col gap-3">
