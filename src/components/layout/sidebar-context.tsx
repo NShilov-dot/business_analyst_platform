@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button'
 type SidebarContextValue = {
   collapsed: boolean
   toggle: () => void
-  setCollapsed: (value: boolean) => void
   /** Mobile off-canvas drawer state (< lg). Independent of `collapsed`. */
   mobileOpen: boolean
   setMobileOpen: (value: boolean) => void
@@ -70,7 +69,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
 
   return (
     <SidebarContext.Provider
-      value={{ collapsed, toggle, setCollapsed, mobileOpen, setMobileOpen }}
+      value={{ collapsed, toggle, mobileOpen, setMobileOpen }}
     >
       {children}
     </SidebarContext.Provider>

@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/api/client'
+import { getErrorMessage } from '@/lib/errors'
 import {
   intakeChatApi,
   type ChatMessage,
@@ -25,14 +26,11 @@ const GREETING =
   'или потребность привела вас сюда — дальше я задам уточняющие вопросы.'
 
 function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    const body = err.body as { error?: { code?: string; message?: string } } | null
-    if (body?.error?.code === 'LLM_UNAVAILABLE') {
-      return 'ИИ-ассистент не настроен на сервере (OPENAI_API_KEY). Обратитесь к администратору.'
-    }
-    if (body?.error?.message) return body.error.message
+  const body = err instanceof ApiError ? (err.body as { error?: { code?: string } } | null) : null
+  if (body?.error?.code === 'LLM_UNAVAILABLE') {
+    return 'ИИ-ассистент не настроен на сервере (OPENAI_API_KEY). Обратитесь к администратору.'
   }
-  return 'Что-то пошло не так. Попробуйте ещё раз.'
+  return getErrorMessage(err, 'Что-то пошло не так. Попробуйте ещё раз.')
 }
 
 function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string }) {

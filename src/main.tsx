@@ -5,7 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { ApiError } from './api/client'
 import { getErrorMessage } from './lib/errors'
 import { toast } from 'sonner'
-import { ThemeProvider } from './components/theme-provider'
+import { ThemeProvider } from 'next-themes'
 import App from './App'
 import './index.css'
 

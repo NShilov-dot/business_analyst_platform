@@ -41,8 +41,6 @@ export const STATUS_META: Record<TicketStatus, { label: string; color: string }>
   rejected: { label: 'Отклонён', color: '#DC2626' },
 }
 
-export const PRIORITY_ORDER: TicketPriority[] = ['critical', 'high', 'medium', 'low']
-
 export const PRIORITY_META: Record<TicketPriority, { label: string; color: string }> = {
   critical: { label: 'Критичный', color: '#DC2626' },
   high: { label: 'Высокий', color: '#EA580C' },
@@ -70,7 +68,7 @@ export const MANDATORY_CORE_FIELDS: { key: string; label: string }[] = [
   { key: 'business_goal', label: 'Цель бизнеса (BG)' },
 ]
 
-export const CORE_LABELS: Record<string, string> = Object.fromEntries(
+const CORE_LABELS: Record<string, string> = Object.fromEntries(
   MANDATORY_CORE_FIELDS.map((f) => [f.key, f.label]),
 )
 

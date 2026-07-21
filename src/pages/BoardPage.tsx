@@ -7,6 +7,7 @@ import {
   priorityMeta,
   type TicketStatus,
 } from '@/features/tickets/model'
+import { ruDate, shortSubject } from '@/features/tickets/format'
 import { ticketsApi, type Ticket } from '@/api/tickets'
 import { useAuth } from '@/auth/AuthProvider'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -16,13 +17,9 @@ const COLUMNS: TicketStatus[] = [...WORKFLOW_ORDER, 'rejected']
 function TicketCard({ ticket, currentSubject }: { ticket: Ticket; currentSubject: string }) {
   const navigate = useNavigate()
   const prio = priorityMeta(ticket.priority)
-  const authorLabel =
-    ticket.author_id === currentSubject ? 'Вы' : '#' + ticket.author_id.slice(0, 8)
+  const authorLabel = shortSubject(ticket.author_id, currentSubject)
   const shortId = '#' + ticket.id.slice(0, 8)
-  const createdDate = new Date(ticket.created_at).toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-  })
+  const createdDate = ruDate(ticket.created_at)
 
   return (
     <div
