@@ -8,11 +8,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-// UI constants for the tickets domain. Status/priority/template keys mirror the
-// backend enums (app.modules.tickets.domain.entities + intake_templates) 1:1 —
-// there is deliberately NO translation layer. Mock ticket data used to live here;
-// it now comes from /v1/tickets (see src/api/tickets.ts).
-
 export type TicketStatus =
   | 'created'
   | 'triage'
@@ -25,7 +20,6 @@ export type TicketStatus =
 
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical'
 
-// The 7 live states in lifecycle order; «rejected» is the terminal reject branch.
 export const WORKFLOW_ORDER: TicketStatus[] = [
   'created',
   'triage',
@@ -64,8 +58,6 @@ export function priorityMeta(
   return p ? PRIORITY_META[p] : { label: 'Без приоритета', color: '#94A3B8' }
 }
 
-// Intake-submission mandatory core (§5 брифа). Keys + labels mirror
-// app.modules.intake_templates MANDATORY_CORE_FIELDS, in the same order.
 export const MANDATORY_CORE_FIELDS: { key: string; label: string }[] = [
   { key: 'problem', label: 'Проблема / потребность' },
   { key: 'expected_result', label: 'Ожидаемый результат' },
@@ -82,15 +74,10 @@ export const CORE_LABELS: Record<string, string> = Object.fromEntries(
   MANDATORY_CORE_FIELDS.map((f) => [f.key, f.label]),
 )
 
-// Human label for any payload key — mandatory-core keys map to their brief label,
-// unknown keys are humanised (snake_case → Sentence case).
 export function fieldLabel(key: string): string {
   return CORE_LABELS[key] ?? key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
 
-// Intake template types (app.modules.intake_templates TemplateType). Only the
-// free_form system template is seeded in Phase 1; the others describe intake
-// types a BA can publish later.
 export type TemplateType =
   | 'feature_request'
   | 'change'

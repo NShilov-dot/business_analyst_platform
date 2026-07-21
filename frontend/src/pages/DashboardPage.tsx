@@ -27,10 +27,6 @@ import { analyticsApi, type ActivityItem } from '@/api/analytics'
 import { useAuth } from '@/auth/AuthProvider'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 
-// Ported from the Claude Design dashboard view: KPI row, intake flow chart,
-// status donut, lifecycle funnel and audit-log activity feed.
-// All widgets that show counts/percentages are derived from REAL API data.
-
 // ---------------------------------------------------------------------------
 // Action metadata for the activity feed
 // ---------------------------------------------------------------------------
