@@ -29,27 +29,9 @@ import {
   priorityMeta,
   fieldLabel,
 } from '@/features/tickets/model'
+import { ruDate, ruDateTime, shortSubject } from '@/features/tickets/format'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function ruDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
-}
-
-function ruDateTime(iso: string) {
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function shortSubject(subject: string, mySubject: string): string {
-  if (subject === mySubject) return 'Вы'
-  if (subject.startsWith('system:')) return subject
-  return '#' + subject.slice(0, 8)
-}
 
 const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
   duplicate: 'Дубликат',
@@ -59,15 +41,9 @@ const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
 
 // ─── Small sub-components ────────────────────────────────────────────────────
 
-function SectionCard({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+function SectionCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn('rounded-2xl border border-border bg-card px-4 py-[22px] sm:px-6', className)}>
+    <div className="rounded-2xl border border-border bg-card px-4 py-[22px] sm:px-6">
       {children}
     </div>
   )
@@ -98,16 +74,14 @@ function PrimaryBtn({
   onClick,
   disabled,
   children,
-  type = 'button',
 }: {
   onClick?: () => void
   disabled?: boolean
   children: React.ReactNode
-  type?: 'button' | 'submit'
 }) {
   return (
     <button
-      type={type}
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className="mb-[9px] flex w-full items-center justify-center gap-[7px] rounded-xl bg-primary p-[13px] text-[13.5px] font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -121,16 +95,14 @@ function SecondaryBtn({
   onClick,
   disabled,
   children,
-  type = 'button',
 }: {
   onClick?: () => void
   disabled?: boolean
   children: React.ReactNode
-  type?: 'button' | 'submit'
 }) {
   return (
     <button
-      type={type}
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className="w-full rounded-xl border border-input bg-card p-[11px] text-[13px] font-semibold hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
@@ -617,11 +589,10 @@ export default function TicketDetailPage() {
               value={rejectReason}
               onChange={setRejectReason}
               placeholder="— выберите —"
-              options={[
-                { value: 'duplicate', label: 'Дубликат' },
-                { value: 'irrelevant', label: 'Не релевантно' },
-                { value: 'unjustified', label: 'Не обосновано' },
-              ]}
+              options={Object.entries(REJECTION_REASON_LABELS).map(([value, label]) => ({
+                value,
+                label,
+              }))}
             />
           </div>
           {rejectReason === 'duplicate' && (

@@ -22,6 +22,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { STATUS_META, WORKFLOW_ORDER, type TicketStatus } from '@/features/tickets/model'
+import { ruDateTime, shortSubject } from '@/features/tickets/format'
 import { ticketsApi } from '@/api/tickets'
 import { analyticsApi, type ActivityItem } from '@/api/analytics'
 import { useAuth } from '@/auth/AuthProvider'
@@ -165,21 +166,8 @@ function ActivityRow({
   const title = item.ticket_title ?? `#${item.entity_id.slice(0, 8)}`
   const rowText = `${title} — ${meta.label}`
 
-  let actorLabel: string
-  if (item.actor.startsWith('system:')) {
-    actorLabel = item.actor
-  } else if (item.actor === subject) {
-    actorLabel = 'Вы'
-  } else {
-    actorLabel = `#${item.actor.slice(0, 8)}`
-  }
-
-  const timeLabel = new Date(item.occurred_at).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const actorLabel = shortSubject(item.actor, subject)
+  const timeLabel = ruDateTime(item.occurred_at)
 
   return (
     <button

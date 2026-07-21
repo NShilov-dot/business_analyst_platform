@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 
 interface Props {
   children: ReactNode
-  fallback?: (error: Error, reset: () => void) => ReactNode
 }
 
 interface State {
@@ -26,9 +25,6 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     const { error } = this.state
     if (error) {
-      if (this.props.fallback) {
-        return this.props.fallback(error, this.reset)
-      }
       return (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
           <p className="text-muted-foreground text-sm">Something went wrong.</p>
