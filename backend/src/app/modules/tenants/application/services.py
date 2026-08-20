@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config import get_settings
 from app.core.errors import (
     ConflictError,
     DomainError,
@@ -30,6 +31,8 @@ from app.core.errors import (
     WeakPasswordError,
 )
 from app.core.keycloak_admin import KeycloakAdminClient, KeycloakAdminError, TenantGroupSpec
+from app.core.tenancy import bucket_for
+from app.modules.documents.domain.ports import ObjectStorePort
 
 logger = structlog.get_logger(__name__)
 
@@ -105,11 +108,16 @@ class TenantProvisioningService:
         kc: KeycloakAdminClient,
         migrate_schema: SchemaMigrator,
         invite_client_id: str | None = None,
+        object_store: ObjectStorePort | None = None,
     ) -> None:
         self._sm = sessionmaker
         self._kc = kc
         self._migrate_schema = migrate_schema
         self._invite_client_id = invite_client_id
+        # Optional — envs without S3 configured provision as before (mirrors
+        # disabled-Keycloak-admin). Self-heals via ensure_bucket on first
+        # upload for tenants provisioned before S3 was enabled.
+        self._store = object_store
 
     # ------------------------------------------------------------------
     # Organization onboarding
@@ -211,6 +219,13 @@ class TenantProvisioningService:
                 #    (CREATE SCHEMA IF NOT EXISTS + versioned alembic), so it's safe to
                 #    re-run on a later re-onboard.
                 await self._migrate_schema(slug)
+
+                # 5. Object-store bucket. Idempotent (ensure_bucket) and LAST —
+                #    the schema migration is the expensive step, so cheap,
+                #    attacker-forcible failures above it still fail first.
+                #    Skipped entirely when S3 is not configured.
+                if self._store is not None:
+                    await self._store.ensure_bucket(bucket_for(get_settings(), slug))
             except Exception:
                 await self._compensate_onboard(
                     tenant_id=tenant_id,
@@ -245,6 +260,11 @@ class TenantProvisioningService:
                 await self._kc.delete_group(group_id)
             except KeycloakAdminError:
                 logger.warning("tenant.compensate_group_failed", group_id=group_id)
+        if self._store is not None:
+            try:
+                await self._store.delete_bucket(bucket_for(get_settings(), slug))
+            except Exception:
+                logger.warning("tenant.compensate_bucket_failed", slug=slug)
         try:
             async with self._sm() as session:
                 await session.execute(

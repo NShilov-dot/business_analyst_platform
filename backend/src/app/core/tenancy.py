@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.core.db import get_sessionmaker
 from app.core.errors import TenantResolutionError
 
@@ -32,6 +33,16 @@ def tenant_schema(slug: str) -> str:
             f"Invalid tenant slug: {slug!r}. Must match {_SLUG_RE.pattern}.",
         )
     return f"tenant_{slug}"
+
+
+def bucket_for(settings: Settings, slug: str) -> str:
+    """Per-tenant object-store bucket name — mirrors `tenant_schema()`'s slug
+    validation so the slug→resource-name mapping lives in one place."""
+    if not _SLUG_RE.fullmatch(slug):
+        raise TenantResolutionError(
+            f"Invalid tenant slug: {slug!r}. Must match {_SLUG_RE.pattern}.",
+        )
+    return f"{settings.s3_bucket_prefix}-{slug}"
 
 
 async def resolve_tenant(*, tenant_id: UUID) -> TenantContext:

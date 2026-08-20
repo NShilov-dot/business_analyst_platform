@@ -6,6 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.ai_structuring.domain.entities import DocumentText
+from app.modules.documents.domain.ports import DocumentRepository
 from app.modules.intake_templates.domain.entities import (
     FieldDefinition,
     TemplateVersionStatus,
@@ -15,6 +17,12 @@ from app.modules.intake_templates.infrastructure.repositories import (
 )
 from app.modules.tickets.application.dtos import CreateTicketCommand, SubmitCommand
 from app.modules.tickets.application.services import TicketService
+
+# Mirrors DocumentService's own visibility rule (owner or ba/tenant_admin/
+# platform_admin) rather than depending on the full DocumentService, which
+# also carries an object store + text extractor this read-only seam never
+# uses. If that rule changes, update both.
+_READ_ANY_ROLES = frozenset({"ba", "tenant_admin", "platform_admin"})
 
 
 class SqlTemplateFieldsProvider:
@@ -30,6 +38,40 @@ class SqlTemplateFieldsProvider:
         if version is None or version.status != TemplateVersionStatus.PUBLISHED:
             return None
         return version.fields
+
+
+class DocumentServiceTextProvider:
+    """DocumentTextProvider over the documents module's repository (mirrors
+    SqlTemplateFieldsProvider). Access-filtered per document: owner or
+    ba/tenant_admin/platform_admin, same as a direct read through `documents`.
+    """
+
+    def __init__(self, repo: DocumentRepository) -> None:
+        self._repo = repo
+
+    async def get_texts_for_session(
+        self,
+        document_ids: tuple[UUID, ...],
+        *,
+        requester_id: UUID,
+        roles: frozenset[str],
+    ) -> tuple[DocumentText, ...]:
+        texts: list[DocumentText] = []
+        for document_id in document_ids:
+            document = await self._repo.get_by_id(document_id)
+            if document is None:
+                continue
+            if document.owner_id != requester_id and not (roles & _READ_ANY_ROLES):
+                continue
+            texts.append(
+                DocumentText(
+                    id=document.id,
+                    filename=document.filename,
+                    status=document.status.value,
+                    text=document.extracted_text or "",
+                )
+            )
+        return tuple(texts)
 
 
 class TicketServiceIntakeSink:

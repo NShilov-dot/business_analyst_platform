@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   FilePlus2,
+  FileText,
   LayoutDashboard,
   ListTodo,
   LogOut,
@@ -23,6 +24,7 @@ const NAV: NavItem[] = [
   { to: '/', label: 'Дашборд', icon: LayoutDashboard, end: true },
   { to: '/board', label: 'Доска заявок', icon: SquareKanban },
   { to: '/intake', label: 'Новая заявка', icon: FilePlus2 },
+  { to: '/documents', label: 'Документы', icon: FileText },
 ]
 
 const SECONDARY_NAV: NavItem[] = [

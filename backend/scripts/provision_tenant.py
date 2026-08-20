@@ -1,5 +1,5 @@
 """Provision a new tenant: insert into public.tenants, create Keycloak group,
-run tenant-head Alembic migrations.
+run tenant-head Alembic migrations, create the tenant's object-store bucket.
 
 Usage:
     python scripts/provision_tenant.py --slug acme --name "ACME Corp"
@@ -7,6 +7,8 @@ Usage:
 Flags:
     --skip-keycloak   Skip Keycloak group creation even if admin is configured.
                       Useful when provisioning in environments without Keycloak.
+    --skip-s3         Skip object-store bucket creation even if S3 is configured.
+                      The bucket self-heals (ensure_bucket) on first upload.
 
 Exit codes:
     0  success
@@ -94,7 +96,33 @@ def _run_tenant_migrations(schema: str) -> None:
     subprocess.run(cmd, check=True)
 
 
-async def _provision(slug: str, name: str, *, skip_keycloak: bool) -> int:
+async def _create_bucket(slug: str) -> None:
+    """Idempotently create the tenant's object-store bucket. No-op when S3
+    is not configured — the bucket self-heals via ensure_bucket on first
+    upload for tenants provisioned before S3 was enabled."""
+    from app.core.tenancy import bucket_for
+    from app.modules.documents.infrastructure.object_store import S3ObjectStore
+
+    settings = get_settings()
+    if not settings.s3_enabled:
+        logger.info("provision.s3_skipped", reason="S3 not configured")
+        return
+
+    import aioboto3
+
+    store = S3ObjectStore(
+        session=aioboto3.Session(),
+        endpoint_url=str(settings.s3_endpoint_url) if settings.s3_endpoint_url else None,
+        access_key=settings.s3_access_key.get_secret_value(),
+        secret_key=settings.s3_secret_key.get_secret_value(),
+        region=settings.s3_region,
+    )
+    bucket = bucket_for(settings, slug)
+    await store.ensure_bucket(bucket)
+    logger.info("provision.bucket_created", bucket=bucket)
+
+
+async def _provision(slug: str, name: str, *, skip_keycloak: bool, skip_s3: bool) -> int:
     # 1. Create the public.tenants row.
     tenant_id = await _create_tenant_row(slug, name)
     logger.info("provision.tenant_created", slug=slug, tenant_id=str(tenant_id))
@@ -116,6 +144,10 @@ async def _provision(slug: str, name: str, *, skip_keycloak: bool) -> int:
     _run_tenant_migrations(schema)
     logger.info("provision.migrations_applied", schema=schema)
 
+    # 4. Object-store bucket (optional, idempotent).
+    if not skip_s3:
+        await _create_bucket(slug)
+
     return 0
 
 
@@ -128,6 +160,11 @@ def main() -> int:
         action="store_true",
         help="Skip Keycloak group creation",
     )
+    parser.add_argument(
+        "--skip-s3",
+        action="store_true",
+        help="Skip object-store bucket creation",
+    )
     args = parser.parse_args()
 
     if not SLUG_RE.fullmatch(args.slug):
@@ -135,7 +172,11 @@ def main() -> int:
         return 2
 
     try:
-        return asyncio.run(_provision(args.slug, args.name, skip_keycloak=args.skip_keycloak))
+        return asyncio.run(
+            _provision(
+                args.slug, args.name, skip_keycloak=args.skip_keycloak, skip_s3=args.skip_s3
+            )
+        )
     except Exception as exc:
         logger.error("provision.failed", error=str(exc))
         return 1

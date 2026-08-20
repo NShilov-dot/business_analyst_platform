@@ -11,6 +11,7 @@ const BoardPage        = lazy(() => import('./pages/BoardPage'))
 const TicketDetailPage = lazy(() => import('./pages/TicketDetailPage'))
 const IntakePage       = lazy(() => import('./pages/IntakePage'))
 const IntakeChatPage   = lazy(() => import('./pages/IntakeChatPage'))
+const DocumentsPage    = lazy(() => import('./pages/DocumentsPage'))
 const TasksPage        = lazy(() => import('./pages/TasksPage'))
 const NewTaskPage      = lazy(() => import('./pages/NewTaskPage'))
 const TaskDetailPage   = lazy(() => import('./pages/TaskDetailPage'))
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/tickets/:id" element={<TicketDetailPage />} />
             <Route path="/intake"      element={<IntakePage />} />
             <Route path="/intake/chat" element={<IntakeChatPage />} />
+            <Route path="/documents"   element={<DocumentsPage />} />
             <Route path="/tasks"       element={<TasksPage />} />
             <Route path="/tasks/new"   element={<NewTaskPage />} />
             <Route path="/tasks/:id"   element={<TaskDetailPage />} />

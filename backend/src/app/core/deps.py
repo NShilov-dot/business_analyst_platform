@@ -3,10 +3,16 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    # Typing-only: keeps this module framework/module-boundary clean at
+    # runtime (core must not import from `modules/*`) while still giving the
+    # accessor a real type in editors/mypy.
+    from app.modules.documents.domain.ports import ObjectStorePort
 
 from app.config import Settings, get_settings
 from app.core.errors import (
@@ -266,6 +272,29 @@ def _keycloak_admin_required(kc: KeycloakAdminOptionalDep) -> KeycloakAdminClien
 
 
 KeycloakAdminDep = Annotated[KeycloakAdminClient, Depends(_keycloak_admin_required)]
+
+
+# ---------------------------------------------------------------------------
+# Object storage (documents module)
+# ---------------------------------------------------------------------------
+
+
+def _object_store_optional(request: Request) -> ObjectStorePort | None:
+    return request.app.state.object_store  # type: ignore[no-any-return]
+
+
+ObjectStoreOptionalDep = Annotated["ObjectStorePort | None", Depends(_object_store_optional)]
+
+
+def _object_store_required(store: ObjectStoreOptionalDep) -> ObjectStorePort:
+    if store is None:
+        # Generic core error (not documents' ObjectStoreUnavailableError) — importing
+        # that here would create a core -> modules dependency this accessor avoids.
+        raise ServiceUnavailableError("Object storage is not configured")
+    return store
+
+
+ObjectStoreDep = Annotated["ObjectStorePort", Depends(_object_store_required)]
 
 
 # ---------------------------------------------------------------------------

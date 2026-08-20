@@ -7,6 +7,8 @@ touches only this file plus config.
 PII note: chat turns ARE sent to the OpenAI API. This adapter is the
 project's first PII-egress integration; enable it only where that is
 acceptable, and keep OPENAI_API_KEY unset to disable the feature entirely.
+`analyze_documents` additionally sends the FULL text of documents attached at
+session start (one call, once per session) — see ChatIntakeService.start_session.
 """
 
 from __future__ import annotations
@@ -18,13 +20,18 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-from app.modules.ai_structuring.domain.entities import LlmTurn
+from app.modules.ai_structuring.domain.entities import (
+    SUMMARY_CHAR_CAP,
+    DocumentPreAnalysis,
+    LlmTurn,
+)
 from app.modules.ai_structuring.domain.errors import LlmUnavailableError
 
 log = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 60.0
 _MAX_COMPLETION_TOKENS = 1_200
+_ANALYSIS_MAX_COMPLETION_TOKENS = 1_000
 
 
 class OpenAILlmGateway:
@@ -99,6 +106,47 @@ class OpenAILlmGateway:
             log.warning("OpenAI response unparseable: %s", exc)
             raise LlmUnavailableError("LLM provider returned an unparseable response") from exc
 
+    async def analyze_documents(
+        self, *, system_prompt: str, text: str
+    ) -> DocumentPreAnalysis:
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            "response_format": {"type": "json_object"},
+            "max_tokens": _ANALYSIS_MAX_COMPLETION_TOKENS,
+            "temperature": 0.2,
+        }
+
+        try:
+            if self._http is not None:
+                response = await self._post(self._http, payload)
+            else:
+                async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+                    response = await self._post(client, payload)
+        except httpx.HTTPError as exc:
+            log.warning("OpenAI document-analysis request failed: %s", exc)
+            raise LlmUnavailableError("LLM provider request failed") from exc
+
+        if response.status_code != 200:
+            log.warning(
+                "OpenAI document-analysis returned %s: %s",
+                response.status_code,
+                response.text[:500],
+            )
+            raise LlmUnavailableError(
+                f"LLM provider returned status {response.status_code}"
+            )
+
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+            return _parse_analysis(content)
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            log.warning("OpenAI document-analysis response unparseable: %s", exc)
+            raise LlmUnavailableError("LLM provider returned an unparseable response") from exc
+
     async def _post(
         self, client: httpx.AsyncClient, payload: dict[str, Any]
     ) -> httpx.Response:
@@ -108,6 +156,36 @@ class OpenAILlmGateway:
             headers={"Authorization": f"Bearer {self._api_key}"},
             timeout=_TIMEOUT_SECONDS,
         )
+
+
+def _parse_analysis(content: str) -> DocumentPreAnalysis:
+    """Parse the model's {summary, draft, opening} JSON contract (strict but
+    forgiving — draft filtered to str→str like _parse_turn; the service further
+    coerces it against the declared template keys)."""
+    data = json.loads(content)
+    if not isinstance(data, dict):
+        raise ValueError("LLM JSON root is not an object")
+
+    summary = data.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("LLM JSON has no usable 'summary'")
+
+    opening = data.get("opening")
+    if not isinstance(opening, str) or not opening.strip():
+        raise ValueError("LLM JSON has no usable 'opening'")
+
+    raw_draft = data.get("draft")
+    draft: dict[str, str] = {}
+    if isinstance(raw_draft, dict):
+        for key, value in raw_draft.items():
+            if isinstance(key, str) and isinstance(value, str):
+                draft[key] = value
+
+    return DocumentPreAnalysis(
+        summary=summary.strip()[:SUMMARY_CHAR_CAP],
+        opening=opening.strip(),
+        draft=draft,
+    )
 
 
 def _parse_turn(content: str) -> LlmTurn:

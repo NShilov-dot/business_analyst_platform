@@ -26,18 +26,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-
+async function handleResponse<T>(res: Response, path: string): Promise<T> {
   if (res.status === 401) {
     // Session is dead — kick the user back through the OIDC flow.
     // /auth/me is the one exception (the AuthProvider handles that case itself).
@@ -54,6 +43,34 @@ async function request<T>(
 
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  return handleResponse<T>(res, path)
+}
+
+/**
+ * Multipart upload — no Content-Type header so the browser sets the
+ * `multipart/form-data; boundary=...` header itself. Shares the same
+ * 401/error handling as JSON requests via `handleResponse`.
+ */
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  })
+  return handleResponse<T>(res, path)
 }
 
 export const api = {

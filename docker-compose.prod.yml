@@ -11,6 +11,11 @@
 #   - Redis requires a password; Keycloak runs `start` (not start-dev) behind TLS.
 #
 # Required env (.env.prod) — see .env.prod.example. `${VAR:?…}` fails fast if unset.
+#
+# Object storage: the internal `minio` service below is a drop-in default and
+# stays unpublished (reachable only from `app` on the compose network). To use
+# an external managed S3 instead, set S3_ENDPOINT_URL + S3_ACCESS_KEY/SECRET_KEY
+# in .env.prod to point at it and omit/scale down the `minio` service.
 
 # postgres / keycloak-db / frontend inherit the base unchanged (no published ports
 # in prod — they're internal-only by virtue of the base not publishing any).
@@ -36,6 +41,12 @@ services:
       timeout: 3s
       retries: 10
     # no published ports — internal only
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    # no published ports — internal only, reached by `app` over the compose network
 
   app:
     build:

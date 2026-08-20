@@ -18,6 +18,7 @@ from app.modules.ai_structuring.application.dtos import (
 )
 from app.modules.ai_structuring.domain.entities import (
     MESSAGE_MAX,
+    ChatAnalysisStatus,
     ChatMessage,
     ChatRole,
     ChatSession,
@@ -32,13 +33,20 @@ T = TypeVar("T")
 # ---------------------------------------------------------------------------
 
 
+_MAX_SESSION_DOCUMENTS = 20
+
+
 class StartSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     template_version_id: UUID = FREE_FORM_VERSION_ID
+    document_ids: list[UUID] = Field(default_factory=list, max_length=_MAX_SESSION_DOCUMENTS)
 
     def to_command(self) -> StartSessionCommand:
-        return StartSessionCommand(template_version_id=self.template_version_id)
+        return StartSessionCommand(
+            template_version_id=self.template_version_id,
+            document_ids=tuple(self.document_ids),
+        )
 
 
 class SendMessageRequest(BaseModel):
@@ -61,6 +69,7 @@ class ChatSessionResponse(BaseModel):
     id: UUID
     template_version_id: UUID
     status: ChatSessionStatus
+    analysis_status: ChatAnalysisStatus
     draft: dict[str, object]
     draft_title: str | None
     message_count: int
@@ -95,6 +104,7 @@ class FieldStateResponse(BaseModel):
     required: bool
     value: str | None
     missing: bool
+    from_document: bool
 
     @classmethod
     def from_state(cls, state: FieldState) -> FieldStateResponse:

@@ -87,6 +87,17 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     openai_model: str = "gpt-4o-mini"
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+
+    # Object storage (documents module). Feature is disabled when the access
+    # key is unset — upload/download answer 503 OBJECT_STORE_UNAVAILABLE.
+    # NOTE: document text is sent to OpenAI once at session start (PII egress,
+    # same consideration as chat turns) — see modules/ai_structuring.
+    s3_endpoint_url: AnyHttpUrl | None = None
+    s3_access_key: SecretStr = SecretStr("")
+    s3_secret_key: SecretStr = SecretStr("")
+    s3_region: str = "us-east-1"
+    s3_bucket_prefix: str = "bap"
+
     max_body_size_bytes: int = 1_048_576
     trusted_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
@@ -115,6 +126,10 @@ class Settings(BaseSettings):
     @property
     def ai_intake_enabled(self) -> bool:
         return bool(self.openai_api_key.get_secret_value())
+
+    @property
+    def s3_enabled(self) -> bool:
+        return bool(self.s3_access_key.get_secret_value())
 
     @property
     def keycloak_public_issuer_effective(self) -> str:
@@ -222,6 +237,13 @@ class Settings(BaseSettings):
             )
         if self.ai_intake_enabled and str(self.openai_base_url).startswith("http://"):
             errors.append("OPENAI_BASE_URL must use HTTPS in production")
+        if self.s3_enabled:
+            if self.s3_endpoint_url is not None and str(self.s3_endpoint_url).startswith(
+                "http://"
+            ):
+                errors.append("S3_ENDPOINT_URL must use HTTPS in production")
+            if self.s3_secret_key.get_secret_value() in _WEAK_SECRETS:
+                errors.append("S3_SECRET_KEY must be set to a real secret in production")
         if errors:
             raise ValueError("Production configuration errors: " + "; ".join(errors))
 

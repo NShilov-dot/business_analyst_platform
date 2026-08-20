@@ -20,6 +20,9 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "cachetools>=5.5.0",
     "orjson>=3.10.7",
+    "aioboto3>=13.2.0",
+    "pypdf>=5.0.0",
+    "python-docx>=1.1.2",
 ]
 
 [dependency-groups]
@@ -77,6 +80,10 @@ exclude = ["alembic/versions"]
 
 [[tool.mypy.overrides]]
 module = ["jose.*", "testcontainers.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["aioboto3.*", "aiobotocore.*", "botocore.*", "docx.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

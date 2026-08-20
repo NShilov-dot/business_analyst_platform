@@ -29,6 +29,11 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
+  minio:
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # console
+
   app:
     build:
       target: dev
