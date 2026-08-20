@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
   Bot,
   CheckCircle2,
   Circle,
+  FileText,
   Loader2,
   Send,
   Sparkles,
@@ -20,6 +21,8 @@ import {
   type FieldState,
   type SessionDetail,
 } from '@/api/intakeChat'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { INTAKE_SESSION_STORAGE_KEY } from './IntakePage'
 
 const GREETING =
   'Здравствуйте! Я помогу оформить бизнес-заявку. Расскажите, какая проблема ' +
@@ -58,42 +61,77 @@ function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string
 
 export default function IntakeChatPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const qc = useQueryClient()
+
+  // Session is created on IntakePage; this page only resumes it by id, so
+  // navigating away and back (or reloading) never loses the analysis. Read
+  // once on mount (lazy initializer) — finalize() clears the storage key on
+  // success, and re-reading it on every render would otherwise immediately
+  // redirect back to /intake right after a successful finalize.
+  const [sessionId] = useState<string | null>(
+    () =>
+      sessionStorage.getItem(INTAKE_SESSION_STORAGE_KEY) ??
+      (location.state as { sessionId?: string } | null)?.sessionId ??
+      null,
+  )
+
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [fields, setFields] = useState<FieldState[]>([])
   const [isReady, setIsReady] = useState(false)
+  // Server sent an opener (documents were pre-analyzed) — sticky once set, so
+  // it doesn't flip once the user starts sending their own messages.
+  const [hasOpener, setHasOpener] = useState(false)
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
   const [fatal, setFatal] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Одна сессия на визит страницы; контекст хранится на бэкенде.
   useEffect(() => {
-    let cancelled = false
-    intakeChatApi
-      .startSession()
-      .then(({ data }) => {
-        if (cancelled) return
-        setDetail(data)
-        setMessages(data.messages)
-        setFields(data.fields)
-        setIsReady(data.is_ready)
-      })
-      .catch((err) => !cancelled && setFatal(errorMessage(err)))
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    if (!sessionId) navigate('/intake', { replace: true })
+  }, [sessionId, navigate])
+
+  // Load (and, while analysis is running in the background, poll) the session.
+  const sessionQuery = useQuery({
+    queryKey: ['intake-chat-session', sessionId],
+    queryFn: () => intakeChatApi.getSession(sessionId as string),
+    enabled: !!sessionId,
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) =>
+      query.state.data?.data.session.analysis_status === 'pending' ? 2500 : false,
+  })
+
+  useEffect(() => {
+    if (sessionQuery.isError) setFatal(errorMessage(sessionQuery.error))
+  }, [sessionQuery.isError, sessionQuery.error])
+
+  // Seed local chat state from the server. This effect only fires while the
+  // query itself (re)fetches — the initial load, and each poll tick while
+  // analysis_status is 'pending'. Once analysis settles, refetchInterval
+  // stops, so later local mutations from send()/finalize() are never clobbered.
+  useEffect(() => {
+    const data = sessionQuery.data?.data
+    if (!data) return
+    setDetail(data)
+    setMessages(data.messages)
+    setHasOpener(data.messages.length > 0)
+    setFields(data.fields)
+    setIsReady(data.is_ready)
+  }, [sessionQuery.data])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, thinking])
 
+  const analysisStatus = detail?.session.analysis_status
+  const analyzing = analysisStatus === 'pending'
+  const analysisFailed = analysisStatus === 'failed'
+
   const send = useCallback(async () => {
     const content = input.trim()
-    if (!content || !detail || thinking) return
+    if (!content || !detail || thinking || analyzing) return
     setInput('')
     setThinking(true)
     // Оптимистично показываем реплику пользователя
@@ -118,7 +156,7 @@ export default function IntakeChatPage() {
     } finally {
       setThinking(false)
     }
-  }, [input, detail, thinking, messages.length])
+  }, [input, detail, thinking, analyzing, messages.length])
 
   const finalize = useCallback(async () => {
     if (!detail || finalizing) return
@@ -126,6 +164,7 @@ export default function IntakeChatPage() {
     try {
       const { data } = await intakeChatApi.finalize(detail.session.id)
       setDetail(data)
+      sessionStorage.removeItem(INTAKE_SESSION_STORAGE_KEY)
       // The finalize created + submitted a real ticket — drop stale board/detail
       // caches so it shows up immediately (was invisible for up to staleTime=30s).
       void qc.invalidateQueries({ queryKey: ['tickets'] })
@@ -137,6 +176,8 @@ export default function IntakeChatPage() {
     }
   }, [detail, finalizing, qc])
 
+  if (!sessionId) return null // redirecting to /intake
+
   if (fatal) {
     return (
       <div className="animate-vfade mx-auto max-w-[560px] rounded-2xl border border-border bg-card p-8 text-center">
@@ -146,8 +187,13 @@ export default function IntakeChatPage() {
     )
   }
 
-  const submitted = detail?.session.status === 'submitted'
+  if (!detail) {
+    return <LoadingSpinner label="Загрузка диалога…" />
+  }
+
+  const submitted = detail.session.status === 'submitted'
   const requiredFields = fields.filter((f) => f.required)
+  const fromDocCount = fields.filter((f) => f.from_document).length
   const filledRequired = requiredFields.filter((f) => !f.missing).length
   const pct = requiredFields.length
     ? Math.round((filledRequired / requiredFields.length) * 100)
@@ -158,7 +204,28 @@ export default function IntakeChatPage() {
       {/* Chat column */}
       <div className="flex h-[calc(100dvh-210px)] flex-col rounded-2xl border border-border bg-muted/40 lg:h-[calc(100vh-190px)]">
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-5">
-          <Bubble role="assistant" content={GREETING} />
+          {analyzing ? (
+            <div className="flex gap-2.5">
+              <div className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-primary text-primary-foreground">
+                <Bot className="h-[18px] w-[18px]" />
+              </div>
+              <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-border bg-card px-4 py-2.5 text-[13px] text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Изучаю приложенные документы и предзаполняю черновик…
+              </div>
+            </div>
+          ) : (
+            <>
+              {analysisFailed && (
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-2.5 text-[12px] text-muted-foreground">
+                  <AlertCircle className="h-4 w-4 flex-none" />
+                  Не удалось проанализировать приложенные документы — продолжите диалог обычным
+                  образом.
+                </div>
+              )}
+              {!hasOpener && <Bubble role="assistant" content={GREETING} />}
+            </>
+          )}
           {messages.map((m) => (
             <Bubble key={m.id} role={m.role} content={m.content} />
           ))}
@@ -193,13 +260,13 @@ export default function IntakeChatPage() {
                 }}
                 placeholder="Опишите проблему или ответьте на вопрос ассистента…"
                 rows={2}
-                disabled={!detail || thinking}
-                className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                disabled={thinking || analyzing}
+                className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={() => void send()}
-                disabled={!input.trim() || !detail || thinking}
+                disabled={!input.trim() || thinking || analyzing}
                 aria-label="Отправить сообщение"
                 className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
               >
@@ -218,8 +285,14 @@ export default function IntakeChatPage() {
             <div className="text-sm font-semibold">Черновик заявки</div>
           </div>
           <div className="mb-3.5 text-[11.5px] text-muted-foreground">
-            {detail?.session.draft_title ?? 'Заголовок появится по ходу диалога'}
+            {detail.session.draft_title ?? 'Заголовок появится по ходу диалога'}
           </div>
+          {fromDocCount > 0 && (
+            <div className="mb-3.5 flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[11px] font-medium text-primary">
+              <FileText className="h-3 w-3 flex-none" />
+              Из документа предзаполнено полей: {fromDocCount}
+            </div>
+          )}
           <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
             <span className="font-medium text-muted-foreground">Готовность заявки</span>
             <span className="font-semibold tabular-nums">
@@ -247,6 +320,12 @@ export default function IntakeChatPage() {
                   <div className="text-[12px] font-semibold leading-tight">
                     {f.label}
                     {f.required && <span className="text-destructive"> *</span>}
+                    {f.from_document && (
+                      <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-[1px] align-middle text-[10px] font-medium text-primary">
+                        <FileText className="h-2.5 w-2.5" />
+                        из документа
+                      </span>
+                    )}
                   </div>
                   {f.value && (
                     <div className="mt-0.5 line-clamp-3 text-[12px] leading-snug text-muted-foreground">
@@ -268,7 +347,7 @@ export default function IntakeChatPage() {
             <div className="mb-3 rounded-[11px] bg-muted px-3.5 py-3">
               <div className="mb-[3px] text-[11px] text-muted-foreground">Номер тикета</div>
               <div className="font-mono text-[12px] font-semibold break-all">
-                {detail?.session.ticket_id}
+                {detail.session.ticket_id}
               </div>
             </div>
             <button

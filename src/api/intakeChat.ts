@@ -10,11 +10,13 @@ import { api } from './client'
 
 export type ChatSessionStatus = 'active' | 'submitted' | 'discarded'
 export type ChatRole = 'user' | 'assistant'
+export type AnalysisStatus = 'none' | 'pending' | 'ready' | 'failed'
 
 export interface ChatSession {
   id: string
   template_version_id: string
   status: ChatSessionStatus
+  analysis_status: AnalysisStatus
   draft: Record<string, unknown>
   draft_title: string | null
   message_count: number
@@ -37,6 +39,7 @@ export interface FieldState {
   required: boolean
   value: string | null
   missing: boolean
+  from_document: boolean
 }
 
 export interface SessionDetail {
@@ -58,11 +61,12 @@ interface Envelope<T> {
 }
 
 export const intakeChatApi = {
-  startSession: (templateVersionId?: string) =>
-    api.post<Envelope<SessionDetail>>(
-      '/v1/intake-chat/sessions',
-      templateVersionId ? { template_version_id: templateVersionId } : {},
-    ),
+  startSession: (templateVersionId?: string, documentIds?: string[]) => {
+    const body: Record<string, unknown> = {}
+    if (templateVersionId) body.template_version_id = templateVersionId
+    if (documentIds && documentIds.length > 0) body.document_ids = documentIds
+    return api.post<Envelope<SessionDetail>>('/v1/intake-chat/sessions', body)
+  },
 
   getSession: (id: string) =>
     api.get<Envelope<SessionDetail>>(`/v1/intake-chat/sessions/${id}`),
