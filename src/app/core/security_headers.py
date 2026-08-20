@@ -59,14 +59,26 @@ class LimitBodySizeMiddleware:
     Raw ASGI middleware (not BaseHTTPMiddleware) so it can intercept early and wrap
     `receive` to enforce the cap on the actual byte stream — catching chunked bodies
     and Content-Length spoofing that a header-only check would miss.
+
+    `exempt_prefixes` opts specific routes (e.g. multipart file upload) out of
+    this global cap; the exempted route MUST enforce its own cap while reading
+    its stream, or it reopens the unbounded-body hole this middleware closes.
     """
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+    def __init__(
+        self, app: ASGIApp, *, max_bytes: int, exempt_prefixes: tuple[str, ...] = ()
+    ) -> None:
         self._app = app
         self._max_bytes = max_bytes
+        self._exempt_prefixes = exempt_prefixes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if any(path.startswith(prefix) for prefix in self._exempt_prefixes):
             await self._app(scope, receive, send)
             return
 

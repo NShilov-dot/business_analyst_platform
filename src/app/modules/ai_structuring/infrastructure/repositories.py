@@ -10,13 +10,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.ai_structuring.domain.entities import (
+    ChatAnalysisStatus,
     ChatMessage,
     ChatRole,
     ChatSession,
     ChatSessionStatus,
 )
 from app.modules.ai_structuring.domain.errors import ChatConcurrentUpdateError
-from app.modules.ai_structuring.infrastructure.models import ChatMessageRow, ChatSessionRow
+from app.modules.ai_structuring.infrastructure.models import (
+    ChatMessageRow,
+    ChatSessionDocumentRow,
+    ChatSessionRow,
+)
 
 # Postgres SQLSTATE for a unique-constraint violation (vs FK/CHECK/NOT-NULL).
 _PG_UNIQUE_VIOLATION = "23505"
@@ -29,8 +34,11 @@ def _session_to_entity(row: ChatSessionRow) -> ChatSession:
         requester_sub=row.requester_sub,
         template_version_id=row.template_version_id,
         status=ChatSessionStatus(row.status),
+        analysis_status=ChatAnalysisStatus(row.analysis_status),
         draft=cast(dict[str, object], row.draft),
         draft_title=row.draft_title,
+        documents_context=row.documents_context,
+        documents_prefilled_keys=tuple(row.documents_prefilled_keys),
         message_count=row.message_count,
         ticket_id=row.ticket_id,
         created_at=row.created_at,
@@ -60,8 +68,11 @@ class SqlAlchemyChatSessionRepository:
             requester_sub=session.requester_sub,
             template_version_id=session.template_version_id,
             status=session.status.value,
+            analysis_status=session.analysis_status.value,
             draft=session.draft,
             draft_title=session.draft_title,
+            documents_context=session.documents_context,
+            documents_prefilled_keys=list(session.documents_prefilled_keys),
             message_count=session.message_count,
             ticket_id=session.ticket_id,
             created_at=session.created_at,
@@ -79,8 +90,11 @@ class SqlAlchemyChatSessionRepository:
         if row is None:  # pragma: no cover — service loads before updating
             return
         row.status = session.status.value
+        row.analysis_status = session.analysis_status.value
         row.draft = session.draft
         row.draft_title = session.draft_title
+        row.documents_context = session.documents_context
+        row.documents_prefilled_keys = list(session.documents_prefilled_keys)
         row.message_count = session.message_count
         row.ticket_id = session.ticket_id
         row.updated_at = session.updated_at
@@ -134,3 +148,10 @@ class SqlAlchemyChatSessionRepository:
             )
         ).all()
         return [_message_to_entity(r) for r in rows]
+
+    async def link_documents(self, session_id: UUID, document_ids: tuple[UUID, ...]) -> None:
+        for document_id in document_ids:
+            self._session.add(
+                ChatSessionDocumentRow(session_id=session_id, document_id=document_id)
+            )
+        await self._session.flush()

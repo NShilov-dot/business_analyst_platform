@@ -12,17 +12,20 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.db import get_sessionmaker
-from app.core.deps import KeycloakAdminDep, SettingsDep
+from app.core.deps import KeycloakAdminDep, ObjectStoreOptionalDep, SettingsDep
 from app.modules.tenants.application.services import TenantProvisioningService
 from app.modules.tenants.infrastructure.schema_migrator import run_tenant_migrations
 
 
-def provisioning_service(kc: KeycloakAdminDep, settings: SettingsDep) -> TenantProvisioningService:
+def provisioning_service(
+    kc: KeycloakAdminDep, settings: SettingsDep, store: ObjectStoreOptionalDep
+) -> TenantProvisioningService:
     return TenantProvisioningService(
         sessionmaker=get_sessionmaker(),
         kc=kc,
         migrate_schema=run_tenant_migrations,
         invite_client_id=settings.oidc_client_id,
+        object_store=store,
     )
 
 

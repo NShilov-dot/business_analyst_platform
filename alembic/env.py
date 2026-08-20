@@ -26,6 +26,7 @@ import app.modules.intake_templates.infrastructure.models  # noqa: F401  (tenant
 import app.modules.audit.infrastructure.models  # noqa: F401  (tenant schema)
 import app.modules.tickets.infrastructure.models  # noqa: F401  (tenant schema)
 import app.modules.ai_structuring.infrastructure.models  # noqa: F401  (tenant schema)
+import app.modules.documents.infrastructure.models  # noqa: F401  (tenant schema)
 
 
 config = context.config

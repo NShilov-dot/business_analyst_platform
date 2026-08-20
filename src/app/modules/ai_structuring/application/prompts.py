@@ -46,7 +46,7 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 
 Поля заявки (ключ — описание; required = поле обязательно):
 {fields_block}
-
+{documents_block}
 Формат ответа — СТРОГО один JSON-объект без пояснений вокруг:
 {{
   "reply": "<твоя следующая реплика собеседнику>",
@@ -59,13 +59,79 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 """
 
 
-def build_system_prompt(fields: tuple[FieldDefinition, ...]) -> str:
-    fields_block = "\n".join(
+def _fields_block(fields: tuple[FieldDefinition, ...]) -> str:
+    return "\n".join(
         f'- {f.key}: {f.label} (required={"true" if f.required else "false"})'
         for f in fields
     )
-    draft_keys = ", ".join(f'"{f.key}": <string|null>' for f in fields)
-    return _SYSTEM_PROMPT_TEMPLATE.format(fields_block=fields_block, draft_keys=draft_keys)
+
+
+def _draft_keys(fields: tuple[FieldDefinition, ...]) -> str:
+    return ", ".join(f'"{f.key}": <string|null>' for f in fields)
+
+
+def build_system_prompt(
+    fields: tuple[FieldDefinition, ...], *, documents_context: str | None = None
+) -> str:
+    """documents_context is None/empty by default — the prompt is then
+    byte-identical to a session with no attached documents (unchanged
+    behavior). When set, it is mixed in EVERY turn (not just the opener) so
+    the model keeps the document context without a per-turn re-read of the
+    raw files."""
+    fields_block = _fields_block(fields)
+    draft_keys = _draft_keys(fields)
+    documents_block = ""
+    if documents_context:
+        documents_block = (
+            "Материалы, приложенные заказчиком (сводка):\n"
+            f"{documents_context}\n"
+            "Опирайся на сводку, но проверяй ключевые детали; это сводка, а не "
+            "дословный текст — не выдумывай фактов сверх неё.\n"
+        )
+    return _SYSTEM_PROMPT_TEMPLATE.format(
+        fields_block=fields_block, draft_keys=draft_keys, documents_block=documents_block
+    )
+
+
+_DOCUMENTS_ANALYSIS_TEMPLATE = """\
+Ты — ИИ-ассистент бизнес-аналитика на платформе BuildX (Beeline Uzbekistan).
+Тебе передан текст документов, которые бизнес-заказчик приложил перед началом
+интервью о новой заявке (черновики ТЗ, служебные записки, описания процессов).
+
+Изучи текст и подготовь ТРИ вещи:
+1. "summary" — краткую сводку сути документов на русском (проблема, контекст,
+   ключевые факты и цифры), не более 500 слов. Это сводка для контекста
+   интервью — не выдумывай факты сверх текста.
+2. "draft" — предзаполни поля заявки значениями, которые ЯВНО следуют из
+   документов. Заполняй поле строкой ТОЛЬКО когда документ даёт содержательный
+   ответ; иначе оставляй null. Не выдумывай и не домысливай.
+3. "opening" — первую реплику для заказчика: покажи, что изучил материалы,
+   кратко перечисли, что уже понятно и предзаполнено, и спроси про то, что
+   осталось уточнить.
+
+Поля заявки (ключ — описание; required = поле обязательно):
+{fields_block}
+
+Формат ответа — СТРОГО один JSON-объект без пояснений вокруг:
+{{
+  "summary": "<сводка>",
+  "draft": {{{draft_keys}}},
+  "opening": "<первая реплика>"
+}}
+В "draft" указывай ВСЕ перечисленные ключи; известные из документов — строками
+(консолидируй, а не цитируй дословно), неизвестные — null.
+"""
+
+
+def build_documents_analysis_prompt(fields: tuple[FieldDefinition, ...]) -> str:
+    """System prompt for the one-time `analyze_documents` pass at session start.
+
+    Carries the same field schema as the interview prompt so the pass can
+    pre-fill the draft with what the documents already answer, alongside the
+    context summary and the opening line."""
+    return _DOCUMENTS_ANALYSIS_TEMPLATE.format(
+        fields_block=_fields_block(fields), draft_keys=_draft_keys(fields)
+    )
 
 
 def coerce_draft(

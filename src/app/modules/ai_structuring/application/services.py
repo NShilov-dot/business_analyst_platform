@@ -14,6 +14,7 @@ SubmissionValidator as the manual form before calling the tickets module.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -27,11 +28,18 @@ from app.modules.ai_structuring.application.dtos import (
     StartSessionCommand,
     TurnResult,
 )
-from app.modules.ai_structuring.application.prompts import build_system_prompt, coerce_draft
+from app.modules.ai_structuring.application.prompts import (
+    build_documents_analysis_prompt,
+    build_system_prompt,
+    coerce_draft,
+)
 from app.modules.ai_structuring.domain.entities import (
+    DOC_TEXT_INPUT_CAP,
+    ChatAnalysisStatus,
     ChatMessage,
     ChatRole,
     ChatSession,
+    ChatSessionStatus,
     validate_message_content,
 )
 from app.modules.ai_structuring.domain.errors import (
@@ -43,6 +51,7 @@ from app.modules.ai_structuring.domain.errors import (
 from app.modules.ai_structuring.domain.ports import (
     ChatSessionRepository,
     Clock,
+    DocumentTextProvider,
     LlmPort,
     TemplateFieldsProvider,
     TicketIntakeSink,
@@ -51,6 +60,8 @@ from app.modules.intake_templates.domain.entities import FieldDefinition
 from app.modules.intake_templates.domain.ports import SubmissionValidator
 
 _TITLE_MAX = 200
+
+log = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -65,6 +76,7 @@ class ChatIntakeService:
     validator: SubmissionValidator
     ticket_sink: TicketIntakeSink
     publisher: EventPublisher
+    doc_texts: DocumentTextProvider
     clock: Clock = field(default=_utc_now)
 
     # ================================================================== #
@@ -76,8 +88,19 @@ class ChatIntakeService:
         *,
         actor_id: UUID,
         actor_sub: str,
+        roles: frozenset[str],
         command: StartSessionCommand,
     ) -> SessionDetail:
+        """Create the session and return FAST — the expensive LLM document
+        pre-analysis, if any, is deferred to a background task (see
+        run_document_analysis) scheduled by the router after this returns.
+
+        With document_ids: a cheap synchronous pre-flight (link + confirm at
+        least one document is usable) still runs here so 403/422 surface in
+        THIS request; analysis_status flips to 'pending' and the caller polls
+        get_session(). Without document_ids: analysis_status stays 'none' and
+        behavior is unchanged (immediate active session, no analysis).
+        """
         fields = await self._published_fields_or_422(command.template_version_id)
         now = self.clock()
 
@@ -96,10 +119,134 @@ class ChatIntakeService:
             after={
                 "status": session.status,
                 "template_version_id": str(command.template_version_id),
+                "document_count": len(command.document_ids),
             },
         )
+
+        if command.document_ids:
+            await self._link_and_validate_documents(
+                session, command.document_ids, actor_id=actor_id, roles=roles
+            )
+            await self.repo.update_session(session)
+
         states, is_ready = await self._field_states(session, fields)
         return SessionDetail(session=session, messages=[], fields=states, is_ready=is_ready)
+
+    async def _link_and_validate_documents(
+        self,
+        session: ChatSession,
+        document_ids: tuple[UUID, ...],
+        *,
+        actor_id: UUID,
+        roles: frozenset[str],
+    ) -> None:
+        """Synchronous pre-flight run inside start_session, BEFORE the
+        expensive LLM pass is deferred: link the documents and confirm at
+        least one is usable, so access/validation errors still surface as an
+        immediate 403/422 rather than only showing up once polled. On success,
+        flips analysis_status to 'pending' — the actual LLM call happens later
+        in run_document_analysis().
+        """
+        await self.repo.link_documents(session.id, document_ids)
+        texts = await self.doc_texts.get_texts_for_session(
+            document_ids, requester_id=actor_id, roles=roles
+        )
+        if len(texts) < len(document_ids):
+            raise ChatAccessDeniedError(
+                "One or more attached documents are not accessible to this account"
+            )
+
+        usable = [t for t in texts if t.status == "extracted" and t.text.strip()]
+        if not usable:
+            raise ChatValidationError(
+                "Ни один из приложенных документов не готов к анализу "
+                "(извлечение текста не удалось или файл пуст)"
+            )
+
+        session.mark_analysis_pending(now=self.clock())
+
+    async def run_document_analysis(
+        self,
+        *,
+        session_id: UUID,
+        document_ids: tuple[UUID, ...],
+        actor_id: UUID,
+        roles: frozenset[str],
+    ) -> None:
+        """Deferred work scheduled by the router right after start_session
+        returns — the actual LLM pass over the attached documents.
+
+        Idempotent: a missing/inactive session, or one whose analysis_status
+        is no longer 'pending' (already applied, failed, or the session was
+        discarded/submitted meanwhile), is a no-op — safe to retry.
+
+        NEVER raises: any failure (LLM down, documents vanished, template
+        unpublished in the meantime, ...) flips analysis_status to 'failed'
+        and is logged, so a background task exception never surfaces to a
+        caller that isn't there to see it. The session stays usable — the
+        requester can still type; documents_context/draft/opener simply
+        remain unset.
+        """
+        session = await self.repo.get_session_by_id(session_id)
+        if (
+            session is None
+            or session.status != ChatSessionStatus.ACTIVE
+            or session.analysis_status != ChatAnalysisStatus.PENDING
+        ):
+            return
+
+        try:
+            fields = await self._published_fields_or_422(session.template_version_id)
+            texts = await self.doc_texts.get_texts_for_session(
+                document_ids, requester_id=actor_id, roles=roles
+            )
+            usable = [t for t in texts if t.status == "extracted" and t.text.strip()]
+            combined = "\n\n".join(f"# {t.filename}\n{t.text}" for t in usable)[
+                :DOC_TEXT_INPUT_CAP
+            ]
+            analysis = await self.llm.analyze_documents(
+                system_prompt=build_documents_analysis_prompt(fields), text=combined
+            )
+            prefilled = coerce_draft(dict(analysis.draft), fields)
+
+            now = self.clock()
+            session.open_with_documents(
+                analysis.summary,
+                draft=prefilled,
+                prefilled_keys=tuple(prefilled.keys()),
+                now=now,
+            )
+            opener = ChatMessage(
+                id=uuid4(),
+                session_id=session.id,
+                seq=1,
+                role=ChatRole.ASSISTANT,
+                content=analysis.opening,
+                created_at=now,
+            )
+            await self.repo.add_message(opener)
+            await self.repo.update_session(session)
+            await self.publisher(
+                "ai_chat_session",
+                session.id,
+                "analysis_completed",
+                after={
+                    "message_count": session.message_count,
+                    "prefilled_count": len(prefilled),
+                },
+            )
+        except Exception as exc:  # background work must not raise
+            log.warning(
+                "ai_chat.analysis_failed session_id=%s error=%s", session_id, exc
+            )
+            session.mark_analysis_failed(now=self.clock())
+            await self.repo.update_session(session)
+            await self.publisher(
+                "ai_chat_session",
+                session.id,
+                "analysis_failed",
+                after={"reason": type(exc).__name__},
+            )
 
     async def get_session(
         self, *, session_id: UUID, actor_id: UUID, roles: frozenset[str]
@@ -132,6 +279,7 @@ class ChatIntakeService:
     ) -> TurnResult:
         session = await self._load_owned(session_id, actor_id=actor_id, roles=roles)
         session.assert_active()
+        session.assert_not_analyzing()
         content = validate_message_content(command.content)
         fields = await self._published_fields_or_422(session.template_version_id)
 
@@ -144,7 +292,7 @@ class ChatIntakeService:
         history.append((ChatRole.USER.value, content))
 
         turn = await self.llm.complete_turn(
-            system_prompt=build_system_prompt(fields),
+            system_prompt=build_system_prompt(fields, documents_context=session.documents_context),
             history=history,
         )
 
@@ -203,6 +351,7 @@ class ChatIntakeService:
     ) -> SessionDetail:
         session = await self._load_owned(session_id, actor_id=actor_id, roles=roles)
         session.assert_active()
+        session.assert_not_analyzing()
 
         errors = await self.validator.validate_submission(
             template_version_id=session.template_version_id,
@@ -303,6 +452,7 @@ class ChatIntakeService:
             payload=session.draft,
         )
         failing = {e.key for e in errors}
+        prefilled = set(session.documents_prefilled_keys)
         states = [
             FieldState(
                 key=f.key,
@@ -310,6 +460,7 @@ class ChatIntakeService:
                 required=f.required,
                 value=(str(v) if (v := session.draft.get(f.key)) is not None else None),
                 missing=f.key in failing,
+                from_document=f.key in prefilled,
             )
             for f in fields
         ]

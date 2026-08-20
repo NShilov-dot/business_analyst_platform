@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import aioboto3
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +23,7 @@ from app.core.rate_limit import RateLimiter
 from app.core.security import JWKSCache
 from app.core.security_headers import LimitBodySizeMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
+from app.modules.documents.infrastructure.object_store import S3ObjectStore
 
 logger = structlog.get_logger(__name__)
 
@@ -67,6 +69,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.keycloak_admin = None
         logger.info("keycloak_admin.disabled")
+
+    if settings.s3_enabled:
+        app.state.object_store = S3ObjectStore(
+            session=aioboto3.Session(),
+            endpoint_url=str(settings.s3_endpoint_url) if settings.s3_endpoint_url else None,
+            access_key=settings.s3_access_key.get_secret_value(),
+            secret_key=settings.s3_secret_key.get_secret_value(),
+            region=settings.s3_region,
+        )
+        logger.info("object_store.enabled")
+    else:
+        app.state.object_store = None
+        logger.info("object_store.disabled")
 
     # Rate-limit counters can live on a dedicated Redis so pressure on the session
     # store cannot disable the limiter (falls back to redis_url when unset).
@@ -129,7 +144,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # responses (413, 400 bad-host, 500) carry the right headers.
 
     # Innermost: reject oversized payloads before the route consumes the body.
-    app.add_middleware(LimitBodySizeMiddleware, max_bytes=settings.max_body_size_bytes)
+    # /v1/documents is exempted — its own route streams+caps the upload at
+    # MAX_FILE_SIZE_BYTES (10 MiB), well above the global 1 MiB JSON-body cap.
+    app.add_middleware(
+        LimitBodySizeMiddleware,
+        max_bytes=settings.max_body_size_bytes,
+        exempt_prefixes=("/v1/documents",),
+    )
 
     # Trusted host validation (only when an allowlist is configured)
     if settings.trusted_hosts:

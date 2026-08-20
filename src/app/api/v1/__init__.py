@@ -6,6 +6,7 @@ from app.modules.analytics.interface.router import router as analytics_router
 from app.modules.audit.interface.router import router as audit_router
 from app.modules.departments.interface.router import router as departments_router
 from app.modules.directory.interface.router import router as directory_router
+from app.modules.documents.interface.router import router as documents_router
 from app.modules.intake_templates.interface.router import router as templates_router
 from app.modules.tasks.interface.router import router as tasks_router
 from app.modules.tenants.interface.router import router as admin_router
@@ -24,3 +25,4 @@ router.include_router(tickets_router)
 router.include_router(intake_chat_router)
 router.include_router(analytics_router)
 router.include_router(directory_router)
+router.include_router(documents_router)

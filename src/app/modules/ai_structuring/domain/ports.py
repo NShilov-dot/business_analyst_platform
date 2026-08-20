@@ -15,7 +15,13 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from app.modules.ai_structuring.domain.entities import ChatMessage, ChatSession, LlmTurn
+from app.modules.ai_structuring.domain.entities import (
+    ChatMessage,
+    ChatSession,
+    DocumentPreAnalysis,
+    DocumentText,
+    LlmTurn,
+)
 from app.modules.intake_templates.domain.entities import FieldDefinition
 
 
@@ -36,6 +42,10 @@ class ChatSessionRepository(Protocol):
 
     async def list_messages(self, session_id: UUID) -> list[ChatMessage]: ...
 
+    async def link_documents(self, session_id: UUID, document_ids: tuple[UUID, ...]) -> None:
+        """Record which documents were attached at session start (join table)."""
+        ...
+
 
 class LlmPort(Protocol):
     """One structured interview turn against the LLM provider.
@@ -51,6 +61,33 @@ class LlmPort(Protocol):
         system_prompt: str,
         history: list[tuple[str, str]],
     ) -> LlmTurn: ...
+
+    async def analyze_documents(
+        self, *, system_prompt: str, text: str
+    ) -> DocumentPreAnalysis:
+        """One-time pass over the combined text of documents attached at
+        session start. ``system_prompt`` carries the template field schema so
+        the pass can pre-fill the draft. Raises LlmUnavailableError on failure."""
+        ...
+
+
+class DocumentTextProvider(Protocol):
+    """Thin seam onto the `documents` module: extracted text for documents
+    attached to a chat session, access-filtered exactly like a direct read
+    through that module (owner or ba/tenant_admin/platform_admin).
+
+    Returns FEWER items than requested when an id doesn't exist or isn't
+    readable by ``requester_id``/``roles`` — the caller treats a shortfall as
+    an access-denied guard rather than silently dropping documents.
+    """
+
+    async def get_texts_for_session(
+        self,
+        document_ids: tuple[UUID, ...],
+        *,
+        requester_id: UUID,
+        roles: frozenset[str],
+    ) -> tuple[DocumentText, ...]: ...
 
 
 class TemplateFieldsProvider(Protocol):

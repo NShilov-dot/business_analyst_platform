@@ -12,6 +12,7 @@ from app.modules.ai_structuring.domain.entities import ChatMessage, ChatSession
 @dataclass(slots=True, kw_only=True)
 class StartSessionCommand:
     template_version_id: UUID
+    document_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -28,6 +29,7 @@ class FieldState:
     required: bool
     value: str | None
     missing: bool  # required and not yet validly filled
+    from_document: bool = False  # value seeded from an attached document
 
 
 @dataclass(slots=True, kw_only=True)

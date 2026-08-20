@@ -15,16 +15,20 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.deps import PrincipalDep, SessionDep, check_csrf, check_rate_limit
-from app.core.events import EventPublisherDep
+from app.core.deps import PrincipalDep, SessionDep, TenantDep, check_csrf, check_rate_limit
+from app.core.events import EventPublisher, EventPublisherDep, _BoundPublisher, get_default_bus
 from app.core.security import AuthError, Principal
+from app.core.tenancy import TenantContext, session_for_tenant
 from app.modules.ai_structuring.application.services import ChatIntakeService
+from app.modules.ai_structuring.domain.entities import ChatAnalysisStatus, DocumentPreAnalysis
 from app.modules.ai_structuring.domain.errors import LlmUnavailableError
 from app.modules.ai_structuring.domain.ports import LlmPort
 from app.modules.ai_structuring.infrastructure.adapters import (
+    DocumentServiceTextProvider,
     SqlTemplateFieldsProvider,
     TicketServiceIntakeSink,
 )
@@ -41,6 +45,7 @@ from app.modules.ai_structuring.interface.schemas import (
     StartSessionRequest,
     TurnResponse,
 )
+from app.modules.documents.infrastructure.repositories import SqlAlchemyDocumentRepository
 from app.modules.intake_templates.application.services import TemplateService
 from app.modules.intake_templates.infrastructure.repositories import (
     SqlAlchemyTemplateRepository,
@@ -79,6 +84,11 @@ class _DisabledLlm:
     ) -> object:
         raise LlmUnavailableError("AI intake is not configured (OPENAI_API_KEY is not set)")
 
+    async def analyze_documents(
+        self, *, system_prompt: str, text: str
+    ) -> DocumentPreAnalysis:
+        raise LlmUnavailableError("AI intake is not configured (OPENAI_API_KEY is not set)")
+
 
 def _llm() -> LlmPort:
     if not get_settings().ai_intake_enabled:
@@ -86,7 +96,12 @@ def _llm() -> LlmPort:
     return OpenAILlmGateway.from_settings()
 
 
-async def _service(session: SessionDep, publisher: EventPublisherDep) -> ChatIntakeService:
+def build_chat_service(session: AsyncSession, publisher: EventPublisher) -> ChatIntakeService:
+    """Composition root for ChatIntakeService, shared by the request-scoped
+    DI dependency (`_service`) AND the background analysis task (`_run_analysis`)
+    so the wiring lives in exactly one place regardless of which AsyncSession
+    (request-scoped vs a fresh tenant-scoped one) drives it.
+    """
     template_service = TemplateService(
         repo=SqlAlchemyTemplateRepository(session), publisher=publisher
     )
@@ -108,10 +123,42 @@ async def _service(session: SessionDep, publisher: EventPublisherDep) -> ChatInt
         validator=template_service,
         ticket_sink=TicketServiceIntakeSink(ticket_service),
         publisher=publisher,
+        doc_texts=DocumentServiceTextProvider(SqlAlchemyDocumentRepository(session)),
     )
 
 
+async def _service(session: SessionDep, publisher: EventPublisherDep) -> ChatIntakeService:
+    return build_chat_service(session, publisher)
+
+
 ServiceDep = Annotated[ChatIntakeService, Depends(_service)]
+
+
+async def _run_analysis(
+    tenant: TenantContext,
+    session_id: UUID,
+    document_ids: tuple[UUID, ...],
+    actor_id: UUID,
+    actor_sub: str,
+    roles: frozenset[str],
+) -> None:
+    """Background task body: opens its OWN tenant-scoped session (independent
+    of the request's, which is already closed by the time this runs — Starlette
+    runs background tasks after the response, i.e. after SessionDep's commit)
+    and drives the deferred LLM pass through the same composition root.
+    """
+    async for bg_session in session_for_tenant(tenant):
+        publisher = _BoundPublisher(
+            bus=get_default_bus(),
+            session=bg_session,
+            actor=actor_sub,
+            request_id=None,
+            roles=sorted(roles),
+        )
+        service = build_chat_service(bg_session, publisher)
+        await service.run_document_analysis(
+            session_id=session_id, document_ids=document_ids, actor_id=actor_id, roles=roles
+        )
 
 
 @router.post(
@@ -121,13 +168,29 @@ ServiceDep = Annotated[ChatIntakeService, Depends(_service)]
     summary="Start an AI-intake chat session",
 )
 async def start_session(
-    body: StartSessionRequest, principal: PrincipalDep, service: ServiceDep
+    body: StartSessionRequest,
+    principal: PrincipalDep,
+    service: ServiceDep,
+    background: BackgroundTasks,
+    tenant: TenantDep,
 ) -> Envelope[SessionDetailResponse]:
+    command = body.to_command()
     detail = await service.start_session(
         actor_id=_actor_id(principal),
         actor_sub=principal.subject,
-        command=body.to_command(),
+        roles=principal.roles,
+        command=command,
     )
+    if detail.session.analysis_status == ChatAnalysisStatus.PENDING:
+        background.add_task(
+            _run_analysis,
+            tenant,
+            detail.session.id,
+            command.document_ids,
+            _actor_id(principal),
+            principal.subject,
+            principal.roles,
+        )
     return Envelope(data=SessionDetailResponse.from_detail(detail))
 
 
