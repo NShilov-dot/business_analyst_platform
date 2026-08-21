@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Outlet } from 'react-router-dom'
+import { Routes, Route, Outlet, Navigate } from 'react-router-dom'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AppLayout } from './components/layout/AppLayout'
@@ -9,7 +9,6 @@ import { AuthProvider } from './auth/AuthProvider'
 const DashboardPage    = lazy(() => import('./pages/DashboardPage'))
 const BoardPage        = lazy(() => import('./pages/BoardPage'))
 const TicketDetailPage = lazy(() => import('./pages/TicketDetailPage'))
-const IntakePage       = lazy(() => import('./pages/IntakePage'))
 const IntakeChatPage   = lazy(() => import('./pages/IntakeChatPage'))
 const DocumentsPage    = lazy(() => import('./pages/DocumentsPage'))
 const TasksPage        = lazy(() => import('./pages/TasksPage'))
@@ -45,8 +44,8 @@ export default function App() {
             <Route path="/"            element={<DashboardPage />} />
             <Route path="/board"       element={<BoardPage />} />
             <Route path="/tickets/:id" element={<TicketDetailPage />} />
-            <Route path="/intake"      element={<IntakePage />} />
-            <Route path="/intake/chat" element={<IntakeChatPage />} />
+            <Route path="/intake"      element={<IntakeChatPage />} />
+            <Route path="/intake/chat" element={<Navigate to="/intake" replace />} />
             <Route path="/documents"   element={<DocumentsPage />} />
             <Route path="/tasks"       element={<TasksPage />} />
             <Route path="/tasks/new"   element={<NewTaskPage />} />
