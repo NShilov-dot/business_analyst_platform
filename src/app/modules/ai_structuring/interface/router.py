@@ -40,6 +40,7 @@ from app.modules.ai_structuring.interface.schemas import (
     ChatSessionResponse,
     Envelope,
     PagedEnvelope,
+    RenameSessionRequest,
     SendMessageRequest,
     SessionDetailResponse,
     StartSessionRequest,
@@ -225,6 +226,26 @@ async def get_session(
         roles=principal.roles,
     )
     return Envelope(data=SessionDetailResponse.from_detail(detail))
+
+
+@router.patch(
+    "/sessions/{session_id}",
+    response_model=Envelope[ChatSessionResponse],
+    summary="Rename the draft (override the running title)",
+)
+async def rename_session(
+    session_id: UUID,
+    body: RenameSessionRequest,
+    principal: PrincipalDep,
+    service: ServiceDep,
+) -> Envelope[ChatSessionResponse]:
+    session = await service.rename(
+        session_id=session_id,
+        actor_id=_actor_id(principal),
+        roles=principal.roles,
+        title=body.draft_title,
+    )
+    return Envelope(data=ChatSessionResponse.from_entity(session))
 
 
 @router.post(

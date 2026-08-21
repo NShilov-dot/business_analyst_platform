@@ -728,3 +728,38 @@ async def test_start_session_all_documents_unusable_is_validation_error(
             roles=frozenset(),
             command=StartSessionCommand(template_version_id=_VERSION_ID, document_ids=(_DOC_ID,)),
         )
+
+
+async def test_rename_overrides_draft_title(
+    repo: FakeRepo, sink: FakeTicketSink, publisher: RecordingPublisher
+) -> None:
+    service = _service(repo, ScriptedLlm([]), sink, publisher, FakeDocTexts())
+    detail = await service.start_session(
+        actor_id=_OWNER_ID,
+        actor_sub=_OWNER_SUB,
+        roles=frozenset(),
+        command=StartSessionCommand(template_version_id=_VERSION_ID),
+    )
+    session = await service.rename(
+        session_id=detail.session.id,
+        actor_id=_OWNER_ID,
+        roles=frozenset(),
+        title="  Экспорт клиентской базы  ",
+    )
+    assert session.draft_title == "Экспорт клиентской базы"  # trimmed
+
+
+async def test_rename_rejects_blank_title(
+    repo: FakeRepo, sink: FakeTicketSink, publisher: RecordingPublisher
+) -> None:
+    service = _service(repo, ScriptedLlm([]), sink, publisher, FakeDocTexts())
+    detail = await service.start_session(
+        actor_id=_OWNER_ID,
+        actor_sub=_OWNER_SUB,
+        roles=frozenset(),
+        command=StartSessionCommand(template_version_id=_VERSION_ID),
+    )
+    with pytest.raises(ChatValidationError):
+        await service.rename(
+            session_id=detail.session.id, actor_id=_OWNER_ID, roles=frozenset(), title="   "
+        )
