@@ -1,10 +1,3 @@
-"""SQLAlchemy ORM rows for the departments module.
-
-All tables are tenant-scoped: they live in `tenant_<slug>` via the per-request
-`search_path` set by `session_for_tenant()`. No `schema=` override — that is
-intentional so migrations are replayable for every new tenant.
-"""
-
 from __future__ import annotations
 
 import uuid

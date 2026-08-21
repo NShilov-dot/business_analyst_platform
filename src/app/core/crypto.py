@@ -1,23 +1,3 @@
-"""Authenticated encryption for tokens at rest (AES-256-GCM with key rotation).
-
-Session payloads in Redis carry live OIDC tokens (access / refresh / id). At rest
-those ARE the real bearer credentials, so we wrap them with AES-256-GCM before they
-ever touch Redis. A leaked RDB/AOF snapshot, a misconfigured replica, or an SSRF
-that reaches Redis then yields ciphertext — not directly replayable tokens.
-
-This is a defense-in-depth layer; the primary boundary remains the opaque HttpOnly
-session cookie + server-side storage. Its value is in secondary-compromise scenarios
-(captured backups, replicas, insider `redis-cli`) where the KEK lives outside Redis.
-
-Key management:
-  - Keys come from settings (SESSION_ENCRYPTION_KEYS), each a base64-encoded 32-byte key.
-  - The first key is the *primary* — used for every new encryption.
-  - All keys are tried on decrypt (newest-first), so a key is rotated by prepending a
-    new one and keeping the old until existing sessions age out (≤ session TTL).
-
-Wire format (base64url):  version(1B) || nonce(12B) || ciphertext+GCM-tag
-"""
-
 from __future__ import annotations
 
 import base64
