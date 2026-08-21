@@ -412,6 +412,18 @@ class ChatIntakeService:
         )
         return session
 
+    async def rename(
+        self, *, session_id: UUID, actor_id: UUID, roles: frozenset[str], title: str
+    ) -> ChatSession:
+        session = await self._load_owned(session_id, actor_id=actor_id, roles=roles)
+        session.rename(title, now=self.clock())
+        await self.repo.update_session(session)
+        # PII discipline: never put the title text in the event payload.
+        await self.publisher(
+            "ai_chat_session", session_id, "renamed", after={"has_title": True}
+        )
+        return session
+
     # ================================================================== #
     # Internal helpers                                                    #
     # ================================================================== #

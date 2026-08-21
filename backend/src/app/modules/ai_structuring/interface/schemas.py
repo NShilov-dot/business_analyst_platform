@@ -58,6 +58,12 @@ class SendMessageRequest(BaseModel):
         return SendMessageCommand(content=self.content)
 
 
+class RenameSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_title: str = Field(min_length=1, max_length=200)
+
+
 # ---------------------------------------------------------------------------
 # Responses
 # ---------------------------------------------------------------------------

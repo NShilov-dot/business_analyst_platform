@@ -13,6 +13,7 @@ import {
   Send,
   ShieldCheck,
   Shuffle,
+  Sparkles,
   ThumbsUp,
   Undo2,
   UserCog,
@@ -444,6 +445,44 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-vfade">
+      {/* Primary action — filing a request is the product's core job */}
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[15px] font-semibold">Обзор</div>
+          <div className="truncate text-[12.5px] text-muted-foreground">
+            Портфель заявок и последние события.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/intake')}
+          className="inline-flex flex-none items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Sparkles className="h-4 w-4" />
+          <span className="hidden sm:inline">Создать&nbsp;</span>заявку
+        </button>
+      </div>
+
+      {total === 0 && (
+        <div className="mb-5 rounded-2xl border-[1.5px] border-primary bg-card p-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+            <Sparkles className="h-6 w-6" />
+          </div>
+          <div className="text-[16px] font-bold">Заявок пока нет</div>
+          <div className="mx-auto mt-1 max-w-[420px] text-[13px] text-muted-foreground">
+            Опишите задачу ассистенту — он задаст вопросы и соберёт первую бизнес-заявку.
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/intake')}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-[13.5px] font-bold text-primary-foreground hover:bg-primary/90"
+          >
+            <Sparkles className="h-4 w-4" />
+            Создать заявку
+          </button>
+        </div>
+      )}
+
       {/* KPI row — 4 cards, all derived from real data */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {/* 1. Total tickets */}

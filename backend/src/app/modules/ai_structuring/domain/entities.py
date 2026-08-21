@@ -276,6 +276,15 @@ class ChatSession:
         self.status = ChatSessionStatus.DISCARDED
         self.updated_at = now or _now()
 
+    def rename(self, title: str, *, now: datetime | None = None) -> None:
+        """Override the running draft title with a human-chosen one."""
+        self.assert_active()
+        cleaned = title.strip()
+        if not cleaned:
+            raise ChatValidationError("Заголовок черновика не может быть пустым")
+        self.draft_title = cleaned[:200]
+        self.updated_at = now or _now()
+
 
 def validate_message_content(content: str) -> str:
     content = content.strip()

@@ -60,6 +60,11 @@ interface Envelope<T> {
   data: T
 }
 
+interface PagedEnvelope<T> {
+  data: T[]
+  meta: { total: number; limit: number; offset: number }
+}
+
 export const intakeChatApi = {
   startSession: (templateVersionId?: string, documentIds?: string[]) => {
     const body: Record<string, unknown> = {}
@@ -68,11 +73,19 @@ export const intakeChatApi = {
     return api.post<Envelope<SessionDetail>>('/v1/intake-chat/sessions', body)
   },
 
+  list: (limit = 20, offset = 0) =>
+    api.get<PagedEnvelope<ChatSession>>(
+      `/v1/intake-chat/sessions?limit=${limit}&offset=${offset}`,
+    ),
+
   getSession: (id: string) =>
     api.get<Envelope<SessionDetail>>(`/v1/intake-chat/sessions/${id}`),
 
   sendMessage: (id: string, content: string) =>
     api.post<Envelope<Turn>>(`/v1/intake-chat/sessions/${id}/messages`, { content }),
+
+  rename: (id: string, title: string) =>
+    api.patch<Envelope<ChatSession>>(`/v1/intake-chat/sessions/${id}`, { draft_title: title }),
 
   finalize: (id: string) =>
     api.post<Envelope<SessionDetail>>(`/v1/intake-chat/sessions/${id}/finalize`),
