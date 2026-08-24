@@ -26,6 +26,19 @@ MESSAGE_MAX = 8_000
 # Hard cap on stored turns per session — bounds both the DB row count and the
 # prompt size sent to the LLM provider.
 MAX_MESSAGES_PER_SESSION = 200
+# Document pre-analysis runs as an in-process BackgroundTask, which dies with
+# a backend restart and leaves analysis_status='pending' forever (blocking
+# turns and keeping the UI polling). A 'pending' older than this is declared
+# failed lazily on read — the analysis itself is one LLM call (~1 min max).
+# ponytail: self-heal on the polled read; a scheduler/queue would be overkill.
+ANALYSIS_PENDING_TTL_SECONDS = 600
+
+# Voice transcription upload cap (mirrors the documents module's cap) and the
+# content types the browser MediaRecorder realistically produces.
+AUDIO_MAX_BYTES = 10 * 1024 * 1024
+ALLOWED_AUDIO_CONTENT_TYPES = frozenset(
+    {"audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"}
+)
 
 # Documents pre-analysis (see application/services.py start_session). The
 # summary is stored on the session and re-sent to the LLM EVERY turn, so it

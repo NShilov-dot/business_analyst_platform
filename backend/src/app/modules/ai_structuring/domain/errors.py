@@ -58,3 +58,27 @@ class LlmUnavailableError(DomainError):
 
     code = "LLM_UNAVAILABLE"
     http_status = 503
+
+
+class UnsupportedAudioTypeError(DomainError):
+    """The uploaded voice message's content type is not one we transcribe."""
+
+    code = "UNSUPPORTED_AUDIO_TYPE"
+    http_status = 415
+
+
+class AudioTooLargeError(DomainError):
+    """The uploaded voice message exceeds AUDIO_MAX_BYTES."""
+
+    code = "AUDIO_TOO_LARGE"
+    http_status = 413
+
+
+class TranscriptionUnavailableError(DomainError):
+    """The transcription provider is not configured or the call failed.
+
+    Mirrors LlmUnavailableError.
+    """
+
+    code = "TRANSCRIPTION_UNAVAILABLE"
+    http_status = 503

@@ -58,6 +58,22 @@ def test_valid_prod_config_passes() -> None:
         ({"oidc_client_secret": "change-me-in-prod"}, "OIDC_CLIENT_SECRET"),
         ({"public_base_url": "http://api.x"}, "PUBLIC_BASE_URL"),
         ({"keycloak_public_issuer": None}, "KEYCLOAK_PUBLIC_ISSUER"),
+        (
+            {
+                "transcription_url": "http://modal.run/x",
+                "transcription_modal_key": "wk-real",
+                "transcription_modal_secret": "ws-real",
+            },
+            "TRANSCRIPTION_URL",
+        ),
+        (
+            {
+                "transcription_url": "https://modal.run/x",
+                "transcription_modal_key": "",
+                "transcription_modal_secret": "",
+            },
+            "TRANSCRIPTION_MODAL_KEY",
+        ),
     ],
 )
 def test_prod_validation_flags_each_gap(override: dict[str, object], needle: str) -> None:
@@ -94,3 +110,15 @@ def test_csrf_allowed_origins_includes_frontend_and_cors() -> None:
 def test_local_env_skips_validation() -> None:
     # Local dev: plaintext redis, no keys, http — must NOT raise.
     Settings(redis_url="redis://r:6379/0", **_BASE).validate_for_production()
+
+
+def test_empty_transcription_url_is_treated_as_unset() -> None:
+    # The scaffolded .env.example ships `TRANSCRIPTION_URL=` (empty) — must
+    # degrade to disabled, not fail AnyHttpUrl validation at startup.
+    s = Settings(
+        transcription_url="",  # type: ignore[arg-type]
+        redis_url="redis://r:6379/0",
+        **_BASE,
+    )
+    assert s.transcription_url is None
+    assert s.transcription_enabled is False

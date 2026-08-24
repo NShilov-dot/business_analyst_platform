@@ -27,6 +27,7 @@ import {
 } from '@/api/intakeChat'
 import { DocumentAttach } from '@/components/DocumentAttach'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { VoiceRecordButton } from '@/components/VoiceRecordButton'
 
 // The active AI-intake session id is kept in sessionStorage so navigating away
 // and back (or reloading) resumes the same session — the analysis is never
@@ -92,6 +93,19 @@ function TypingBubble({ label }: { label: string }) {
   )
 }
 
+// Mirrors TypingBubble but right-aligned like a user message, shown while a
+// recorded voice message is being transcribed on the server.
+function TranscribingBubble() {
+  return (
+    <div className="flex justify-end gap-2.5">
+      <div className="flex items-center gap-2 rounded-2xl rounded-br-md bg-foreground/80 px-4 py-2.5 text-[13px] text-background">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Расшифровка голосового сообщения…
+      </div>
+    </div>
+  )
+}
+
 export default function IntakeChatPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -111,6 +125,10 @@ export default function IntakeChatPage() {
   const [hasOpener, setHasOpener] = useState(false)
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  // While recording, the VoiceRecordButton grows into a full-width strip and
+  // the textarea/send are hidden — this mirrors its internal state.
+  const [recording, setRecording] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
   const [fatal, setFatal] = useState<string | null>(null)
   // Pre-session: documents chosen before the session exists (passed to
@@ -161,8 +179,12 @@ export default function IntakeChatPage() {
     queryFn: () => intakeChatApi.getSession(sessionId as string),
     enabled: !!sessionId,
     refetchOnWindowFocus: false,
-    refetchInterval: (query) =>
-      query.state.data?.data.session.analysis_status === 'pending' ? 2500 : false,
+    refetchInterval: (query) => {
+      // Poll only while an ACTIVE session is being analyzed — a non-active
+      // session's 'pending' can never resolve (the background pass no-ops).
+      const s = query.state.data?.data.session
+      return s?.analysis_status === 'pending' && s.status === 'active' ? 2500 : false
+    },
   })
 
   useEffect(() => {
@@ -171,15 +193,31 @@ export default function IntakeChatPage() {
 
   useEffect(() => {
     const data = sessionQuery.data?.data
-    if (data) seedFrom(data)
+    if (!data) return
+    // A discarded session can linger in sessionStorage (discarded in another
+    // tab, or orphaned long ago) — resuming it dead-ends the workspace, so
+    // drop it and start fresh in the pre-session composer.
+    if (data.session.status === 'discarded') {
+      sessionStorage.removeItem(INTAKE_SESSION_STORAGE_KEY)
+      setSessionId(null)
+      setDetail(null)
+      return
+    }
+    seedFrom(data)
   }, [sessionQuery.data, seedFrom])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, thinking, starting])
+  }, [messages, thinking, starting, transcribing])
+
+  // Prewarm the transcription GPU as soon as the chat opens so the first
+  // voice message doesn't pay the full cold-start cost. Fire-and-forget.
+  useEffect(() => {
+    void intakeChatApi.warmupTranscription().catch(() => {})
+  }, [])
 
   const analysisStatus = detail?.session.analysis_status
-  const analyzing = analysisStatus === 'pending'
+  const analyzing = analysisStatus === 'pending' && detail?.session.status === 'active'
   const analysisFailed = analysisStatus === 'failed'
 
   // Create the session lazily (with any attached documents), then optionally
@@ -214,12 +252,54 @@ export default function IntakeChatPage() {
         }
         setSessionId(data.session.id) // enables the resume query + polling
       } catch (err) {
+        // Same append-preserving restore as sendText's catch — otherwise a
+        // dictated (or typed) first message just vanishes on failure.
+        if (firstMessage) {
+          setInput((prev) => (prev.trim() ? `${prev} ${firstMessage}` : firstMessage))
+        }
         toast.error(errorMessage(err))
       } finally {
         setStarting(false)
       }
     },
     [pendingDocIds, seedFrom, starting],
+  )
+
+  // Send a message to the active session. Extracted from send() so a
+  // transcribed voice message can be sent the same way as typed text,
+  // without going through the composer's input state.
+  const sendText = useCallback(
+    async (content: string) => {
+      if (!content || !detail) return
+      if (thinking || analyzing || starting) return
+      setThinking(true)
+      const optimistic: ChatMessage = {
+        id: `local-${Date.now()}`,
+        seq: messages.length + 1,
+        role: 'user',
+        content,
+        created_at: new Date().toISOString(),
+      }
+      setMessages((m) => [...m, optimistic])
+      try {
+        const { data } = await intakeChatApi.sendMessage(detail.session.id, content)
+        setDetail((d) => (d ? { ...d, session: data.session } : d))
+        setMessages((m) => [...m, data.reply])
+        setFields(data.fields)
+        setIsReady(data.is_ready)
+      } catch (err) {
+        setMessages((m) => m.filter((msg) => msg.id !== optimistic.id))
+        // Append rather than replace: the typed path already cleared the
+        // composer before calling sendText, so this restores it verbatim;
+        // the voice path may have a half-typed draft sitting in `input`
+        // that must survive a failed auto-send.
+        setInput((prev) => (prev.trim() ? `${prev} ${content}` : content))
+        toast.error(errorMessage(err))
+      } finally {
+        setThinking(false)
+      }
+    },
+    [detail, thinking, analyzing, starting, messages.length],
   )
 
   const send = useCallback(async () => {
@@ -234,31 +314,10 @@ export default function IntakeChatPage() {
       await startAndMaybeSend(willSend ? content : undefined)
       return
     }
-    if (!content || !detail) return
+    if (!content) return
     setInput('')
-    setThinking(true)
-    const optimistic: ChatMessage = {
-      id: `local-${Date.now()}`,
-      seq: messages.length + 1,
-      role: 'user',
-      content,
-      created_at: new Date().toISOString(),
-    }
-    setMessages((m) => [...m, optimistic])
-    try {
-      const { data } = await intakeChatApi.sendMessage(detail.session.id, content)
-      setDetail((d) => (d ? { ...d, session: data.session } : d))
-      setMessages((m) => [...m, data.reply])
-      setFields(data.fields)
-      setIsReady(data.is_ready)
-    } catch (err) {
-      setMessages((m) => m.filter((msg) => msg.id !== optimistic.id))
-      setInput(content)
-      toast.error(errorMessage(err))
-    } finally {
-      setThinking(false)
-    }
-  }, [input, detail, thinking, analyzing, starting, preSession, pendingDocIds.length, messages.length, startAndMaybeSend])
+    await sendText(content)
+  }, [input, thinking, analyzing, starting, preSession, pendingDocIds.length, startAndMaybeSend, sendText])
 
   const finalize = useCallback(async () => {
     if (!detail || finalizing) return
@@ -529,6 +588,7 @@ export default function IntakeChatPage() {
             </div>
           )}
           {starting && <TypingBubble label="Начинаю диалог…" />}
+          {transcribing && <TranscribingBubble />}
         </div>
         <div className="space-y-3 rounded-b-2xl border-t border-border bg-card p-3.5">
           {/* Attach documents (optional) */}
@@ -539,30 +599,46 @@ export default function IntakeChatPage() {
           />
           {/* Composer */}
           <div className="flex items-end gap-2.5">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void send()
-                }
-              }}
-              placeholder="Опишите проблему или задачу…"
-              rows={2}
+            {!recording && (
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void send()
+                  }
+                }}
+                placeholder="Опишите проблему или задачу…"
+                rows={2}
+                disabled={starting}
+                className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              />
+            )}
+            <VoiceRecordButton
               disabled={starting}
-              className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              onTranscribingChange={setTranscribing}
+              onRecordingChange={setRecording}
+              onTranscript={(t) => {
+                // Documents still need "Начать" to be pressed explicitly (a
+                // turn can't be sent while they're being analysed) — seed the
+                // composer instead of auto-sending in that case.
+                if (pendingDocIds.length > 0) seedComposer(input ? `${input} ${t}` : t)
+                else void startAndMaybeSend(t)
+              }}
             />
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={!canStart}
-              aria-label="Начать диалог"
-              className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-            >
-              {starting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-            </button>
+            {!recording && (
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={!canStart}
+                aria-label="Начать диалог"
+                className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              >
+                {starting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              </button>
+            )}
           </div>
           {pendingDocIds.length > 0 && (
             <div className="text-[11.5px] text-muted-foreground">
@@ -644,6 +720,7 @@ export default function IntakeChatPage() {
             <Bubble key={m.id} role={m.role} content={m.content} />
           ))}
           {thinking && <TypingBubble label="Ассистент печатает…" />}
+          {transcribing && <TranscribingBubble />}
         </div>
         <div className="border-t border-border bg-card p-3.5 rounded-b-2xl">
           {submitted ? (
@@ -653,30 +730,45 @@ export default function IntakeChatPage() {
             </div>
           ) : (
             <div className="flex items-end gap-2.5">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void send()
-                  }
+              {!recording && (
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void send()
+                    }
+                  }}
+                  placeholder="Ответьте на вопрос ассистента…"
+                  rows={2}
+                  disabled={thinking || analyzing}
+                  className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                />
+              )}
+              <VoiceRecordButton
+                disabled={thinking || analyzing || submitted}
+                onTranscribingChange={setTranscribing}
+                onRecordingChange={setRecording}
+                onTranscript={(t) => {
+                  // The assistant is mid-reply: sendText() would drop the text
+                  // (its own thinking guard), so hand it to the composer instead.
+                  if (thinking) setInput((v) => (v ? `${v} ${t}` : t))
+                  else void sendText(t)
                 }}
-                placeholder="Ответьте на вопрос ассистента…"
-                rows={2}
-                disabled={thinking || analyzing}
-                className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               />
-              <button
-                type="button"
-                onClick={() => void send()}
-                disabled={!input.trim() || thinking || analyzing}
-                aria-label="Отправить сообщение"
-                className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              >
-                <Send className="h-5 w-5" />
-              </button>
+              {!recording && (
+                <button
+                  type="button"
+                  onClick={() => void send()}
+                  disabled={!input.trim() || thinking || analyzing}
+                  aria-label="Отправить сообщение"
+                  className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                >
+                  <Send className="h-5 w-5" />
+                </button>
+              )}
             </div>
           )}
         </div>

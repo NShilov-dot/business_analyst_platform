@@ -6,7 +6,7 @@
  * действие: создаёт тикет и отправляет его на триаж от имени заявителя.
  */
 
-import { api } from './client'
+import { api, postForm } from './client'
 
 export type ChatSessionStatus = 'active' | 'submitted' | 'discarded'
 export type ChatRole = 'user' | 'assistant'
@@ -92,4 +92,13 @@ export const intakeChatApi = {
 
   discard: (id: string) =>
     api.post<Envelope<ChatSession>>(`/v1/intake-chat/sessions/${id}/discard`),
+
+  transcribe: (audio: Blob, filename: string) => {
+    const form = new FormData()
+    form.append('file', audio, filename)
+    return postForm<Envelope<{ text: string }>>('/v1/intake-chat/transcriptions', form)
+  },
+
+  warmupTranscription: () =>
+    api.post<Envelope<{ status: string }>>('/v1/intake-chat/transcriptions/warmup'),
 }

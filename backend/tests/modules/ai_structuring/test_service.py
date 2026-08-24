@@ -17,7 +17,7 @@ Covers:
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -29,6 +29,7 @@ from app.modules.ai_structuring.application.dtos import (
 )
 from app.modules.ai_structuring.application.services import ChatIntakeService
 from app.modules.ai_structuring.domain.entities import (
+    ANALYSIS_PENDING_TTL_SECONDS,
     ChatAnalysisStatus,
     ChatMessage,
     ChatSession,
@@ -763,3 +764,31 @@ async def test_rename_rejects_blank_title(
         await service.rename(
             session_id=detail.session.id, actor_id=_OWNER_ID, roles=frozenset(), title="   "
         )
+
+
+async def test_get_session_self_heals_stale_pending_analysis(
+    repo: FakeRepo, sink: FakeTicketSink, publisher: RecordingPublisher
+) -> None:
+    """A backend restart kills the in-process analysis task without flipping
+    'pending'; get_session (the endpoint the UI polls) declares such an
+    orphaned analysis failed once it is older than ANALYSIS_PENDING_TTL_SECONDS,
+    while a fresh 'pending' is left alone."""
+    doc_texts = FakeDocTexts(
+        texts=(
+            DocumentText(id=_DOC_ID, filename="tz.pdf", status="extracted", text="Текст документа"),
+        )
+    )
+    service = _service(repo, ScriptedLlm(turns=[], analyses=[]), sink, publisher, doc_texts)
+    session_id = await _start(service, document_ids=(_DOC_ID,))
+
+    detail = await service.get_session(session_id=session_id, actor_id=_OWNER_ID, roles=frozenset())
+    assert detail.session.analysis_status == ChatAnalysisStatus.PENDING
+
+    stale = repo.sessions[session_id]
+    repo.sessions[session_id] = dataclasses.replace(
+        stale, updated_at=_TS - timedelta(seconds=ANALYSIS_PENDING_TTL_SECONDS + 1)
+    )
+
+    detail = await service.get_session(session_id=session_id, actor_id=_OWNER_ID, roles=frozenset())
+    assert detail.session.analysis_status == ChatAnalysisStatus.FAILED
+    assert repo.sessions[session_id].analysis_status == ChatAnalysisStatus.FAILED

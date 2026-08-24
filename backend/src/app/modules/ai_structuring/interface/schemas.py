@@ -133,6 +133,14 @@ class SessionDetailResponse(BaseModel):
         )
 
 
+class TranscriptionResponse(BaseModel):
+    text: str
+
+
+class WarmupResponse(BaseModel):
+    status: str
+
+
 class TurnResponse(BaseModel):
     session: ChatSessionResponse
     reply: ChatMessageResponse

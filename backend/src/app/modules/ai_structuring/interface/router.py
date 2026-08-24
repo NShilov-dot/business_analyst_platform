@@ -12,10 +12,11 @@ while reads keep working.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -24,9 +25,20 @@ from app.core.events import EventPublisher, EventPublisherDep, _BoundPublisher, 
 from app.core.security import AuthError, Principal
 from app.core.tenancy import TenantContext, session_for_tenant
 from app.modules.ai_structuring.application.services import ChatIntakeService
-from app.modules.ai_structuring.domain.entities import ChatAnalysisStatus, DocumentPreAnalysis
-from app.modules.ai_structuring.domain.errors import LlmUnavailableError
-from app.modules.ai_structuring.domain.ports import LlmPort
+from app.modules.ai_structuring.domain.entities import (
+    ALLOWED_AUDIO_CONTENT_TYPES,
+    AUDIO_MAX_BYTES,
+    ChatAnalysisStatus,
+    DocumentPreAnalysis,
+)
+from app.modules.ai_structuring.domain.errors import (
+    AudioTooLargeError,
+    ChatValidationError,
+    LlmUnavailableError,
+    TranscriptionUnavailableError,
+    UnsupportedAudioTypeError,
+)
+from app.modules.ai_structuring.domain.ports import LlmPort, TranscriptionPort
 from app.modules.ai_structuring.infrastructure.adapters import (
     DocumentServiceTextProvider,
     SqlTemplateFieldsProvider,
@@ -36,6 +48,9 @@ from app.modules.ai_structuring.infrastructure.openai_gateway import OpenAILlmGa
 from app.modules.ai_structuring.infrastructure.repositories import (
     SqlAlchemyChatSessionRepository,
 )
+from app.modules.ai_structuring.infrastructure.transcription_gateway import (
+    ModalTranscriptionGateway,
+)
 from app.modules.ai_structuring.interface.schemas import (
     ChatSessionResponse,
     Envelope,
@@ -44,7 +59,9 @@ from app.modules.ai_structuring.interface.schemas import (
     SendMessageRequest,
     SessionDetailResponse,
     StartSessionRequest,
+    TranscriptionResponse,
     TurnResponse,
+    WarmupResponse,
 )
 from app.modules.documents.infrastructure.repositories import SqlAlchemyDocumentRepository
 from app.modules.intake_templates.application.services import TemplateService
@@ -62,6 +79,8 @@ from app.modules.tickets.infrastructure.gates import (
     AttestationSpecApprovalGate,
 )
 from app.modules.tickets.infrastructure.repositories import SqlAlchemyTicketRepository
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/intake-chat",
@@ -95,6 +114,69 @@ def _llm() -> LlmPort:
     if not get_settings().ai_intake_enabled:
         return _DisabledLlm()  # type: ignore[return-value]
     return OpenAILlmGateway.from_settings()
+
+
+class _DisabledTranscriber:
+    """TranscriptionPort stand-in when transcription is not configured."""
+
+    async def transcribe(self, *, content: bytes, content_type: str, filename: str) -> str:
+        raise TranscriptionUnavailableError(
+            "Voice transcription is not configured (TRANSCRIPTION_URL is not set)"
+        )
+
+    async def warmup(self) -> None:
+        pass
+
+
+def _transcriber() -> TranscriptionPort:
+    """A real FastAPI dependency (unlike `_llm`) so endpoint tests can swap in
+    a fake transcriber via app.dependency_overrides[_transcriber]."""
+    if not get_settings().transcription_enabled:
+        return _DisabledTranscriber()
+    return ModalTranscriptionGateway.from_settings()
+
+
+TranscriberDep = Annotated[TranscriptionPort, Depends(_transcriber)]
+
+
+_CONTENT_LENGTH_SLACK_BYTES = 64 * 1024  # multipart boundary/headers overhead
+
+
+def _reject_declared_oversized(request: Request, max_bytes: int) -> None:
+    """Cheap honest-client mitigation: reject a declared-oversized upload
+    before the multipart parser spools it into memory/a temp file. This is
+    NOT the authoritative cap — a chunked-transfer or lying-Content-Length
+    client still reaches _read_audio_capped, which enforces the real limit
+    while reading; in deployed topologies nginx's client_max_body_size (12m)
+    bounds the residual worst case."""
+    declared = request.headers.get("content-length")
+    if declared is None:
+        return
+    try:
+        size = int(declared)
+    except ValueError:
+        return
+    if size > max_bytes + _CONTENT_LENGTH_SLACK_BYTES:
+        raise AudioTooLargeError(f"Audio exceeds the {max_bytes // (1024 * 1024)} MiB limit")
+
+
+async def _read_audio_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read the upload stream in chunks, rejecting it as soon as it exceeds
+    max_bytes — this route is exempt from the global body-size middleware and
+    must enforce its own cap while reading (mirrors documents' _read_capped;
+    not shared — the raised error type differs and the two call sites are the
+    only ones, not worth a shared helper)."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise AudioTooLargeError(f"Audio exceeds the {max_bytes // (1024 * 1024)} MiB limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def build_chat_service(session: AsyncSession, publisher: EventPublisher) -> ChatIntakeService:
@@ -299,3 +381,50 @@ async def discard(
         roles=principal.roles,
     )
     return Envelope(data=ChatSessionResponse.from_entity(session))
+
+
+@router.post(
+    "/transcriptions",
+    response_model=Envelope[TranscriptionResponse],
+    summary="Transcribe a voice message to text (nothing is persisted)",
+)
+async def transcribe_voice(
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    transcriber: TranscriberDep,
+    principal: PrincipalDep,
+) -> Envelope[TranscriptionResponse]:
+    # Auth: router-level check_rate_limit -> PrincipalDep -> 401 without a session.
+    # Deliberately WITHOUT SessionDep/TenantDep: no DB work happens here, and a
+    # pooled connection must not be held through a Modal call that can run for
+    # minutes on a cold start.
+    log.info("voice transcription requested by %s", principal.subject)
+    _reject_declared_oversized(request, AUDIO_MAX_BYTES)
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type not in ALLOWED_AUDIO_CONTENT_TYPES:
+        raise UnsupportedAudioTypeError(f"Unsupported audio content type: {content_type!r}")
+    data = await _read_audio_capped(file, AUDIO_MAX_BYTES)
+    if not data:
+        raise ChatValidationError("Empty audio upload")
+    text = await transcriber.transcribe(
+        content=data, content_type=content_type, filename=file.filename or "voice"
+    )
+    return Envelope(data=TranscriptionResponse(text=text))
+
+
+@router.post(
+    "/transcriptions/warmup",
+    status_code=202,
+    response_model=Envelope[WarmupResponse],
+    summary="Prewarm the transcription GPU",
+)
+async def warmup_transcription(
+    background: BackgroundTasks,
+    transcriber: TranscriberDep,
+    principal: PrincipalDep,
+) -> Envelope[WarmupResponse]:
+    # Always 202, even when the feature is disabled — the frontend fires this
+    # on every chat-page open and must never handle an error from it.
+    log.info("transcription warmup requested by %s", principal.subject)
+    background.add_task(transcriber.warmup)
+    return Envelope(data=WarmupResponse(status="warming"))

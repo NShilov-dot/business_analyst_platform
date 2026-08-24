@@ -12,6 +12,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
+# Корпоративный SSL-inspection прокси (Unitel/Beeline FortiGate) переподписывает
+# весь внешний HTTPS своим корнем — без него httpx падает с CERTIFICATE_VERIFY_FAILED
+# на любом внешнем API (Modal, LLM). Доверяем корень системно; SSL_CERT_FILE
+# переключает httpx (и всё, что уважает эту переменную) с certifi на системный
+# бандл, куда update-ca-certificates добавил корень.
+COPY docker/unitel-root-ca.crt /usr/local/share/ca-certificates/unitel-root-ca.crt
+RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 COPY --from=ghcr.io/astral-sh/uv:0.5.4 /uv /usr/local/bin/uv
 
 
