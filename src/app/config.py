@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     s3_bucket_prefix: str = "bap"
 
+    # Voice transcription (ai_structuring). TEMPORARY Modal-hosted pilot — raw
+    # voice audio (PII) egresses to Modal; audio is never persisted anywhere.
+    transcription_url: AnyHttpUrl | None = None
+    transcription_modal_key: SecretStr = SecretStr("")
+    transcription_modal_secret: SecretStr = SecretStr("")
+
     max_body_size_bytes: int = 1_048_576
     trusted_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
@@ -110,6 +116,17 @@ class Settings(BaseSettings):
         "keycloak_expected_token_types",
         mode="before",
     )(_split_csv)
+
+    @field_validator("transcription_url", mode="before")
+    @classmethod
+    def _empty_transcription_url_is_unset(cls, value: object) -> object:
+        """An empty/whitespace string means "disabled", same as the scaffolded
+        .env.example ships (`TRANSCRIPTION_URL=`) — pydantic-settings does not
+        treat an empty env value as unset, so without this it fails AnyHttpUrl
+        validation instead of degrading to the feature-disabled 503."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     # ------------------------------------------------------------------
     # Derived helpers
@@ -130,6 +147,14 @@ class Settings(BaseSettings):
     @property
     def s3_enabled(self) -> bool:
         return bool(self.s3_access_key.get_secret_value())
+
+    @property
+    def transcription_enabled(self) -> bool:
+        return bool(
+            self.transcription_url
+            and self.transcription_modal_key.get_secret_value()
+            and self.transcription_modal_secret.get_secret_value()
+        )
 
     @property
     def keycloak_public_issuer_effective(self) -> str:
@@ -244,6 +269,18 @@ class Settings(BaseSettings):
                 errors.append("S3_ENDPOINT_URL must use HTTPS in production")
             if self.s3_secret_key.get_secret_value() in _WEAK_SECRETS:
                 errors.append("S3_SECRET_KEY must be set to a real secret in production")
+        if self.transcription_url is not None:
+            # Keyed on the URL being set (not `transcription_enabled`) so a
+            # half-configured prod deploy fails fast instead of silently
+            # running with transcription disabled.
+            if str(self.transcription_url).startswith("http://"):
+                errors.append("TRANSCRIPTION_URL must use HTTPS in production")
+            if self.transcription_modal_key.get_secret_value() in _WEAK_SECRETS:
+                errors.append("TRANSCRIPTION_MODAL_KEY must be set to a real secret in production")
+            if self.transcription_modal_secret.get_secret_value() in _WEAK_SECRETS:
+                errors.append(
+                    "TRANSCRIPTION_MODAL_SECRET must be set to a real secret in production"
+                )
         if errors:
             raise ValueError("Production configuration errors: " + "; ".join(errors))
 

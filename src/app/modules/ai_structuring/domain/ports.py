@@ -121,5 +121,17 @@ class TicketIntakeSink(Protocol):
         ...
 
 
+class TranscriptionPort(Protocol):
+    """STT for one voice message. The adapter owns transport and auth; on
+    provider failure it raises TranscriptionUnavailableError. Audio is never
+    persisted — it flows through memory only."""
+
+    async def transcribe(self, *, content: bytes, content_type: str, filename: str) -> str: ...
+
+    async def warmup(self) -> None:
+        """Best-effort prewarm; a no-op for non-Modal adapters."""
+        ...
+
+
 class Clock(Protocol):
     def __call__(self) -> datetime: ...

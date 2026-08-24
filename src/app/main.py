@@ -144,12 +144,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # responses (413, 400 bad-host, 500) carry the right headers.
 
     # Innermost: reject oversized payloads before the route consumes the body.
-    # /v1/documents is exempted — its own route streams+caps the upload at
-    # MAX_FILE_SIZE_BYTES (10 MiB), well above the global 1 MiB JSON-body cap.
+    # /v1/documents and /v1/intake-chat/transcriptions are exempted — both
+    # routes stream the upload and enforce their own byte cap in-route
+    # (MAX_FILE_SIZE_BYTES / AUDIO_MAX_BYTES), well above the global 1 MiB
+    # JSON-body cap.
     app.add_middleware(
         LimitBodySizeMiddleware,
         max_bytes=settings.max_body_size_bytes,
-        exempt_prefixes=("/v1/documents",),
+        exempt_prefixes=("/v1/documents", "/v1/intake-chat/transcriptions"),
     )
 
     # Trusted host validation (only when an allowlist is configured)

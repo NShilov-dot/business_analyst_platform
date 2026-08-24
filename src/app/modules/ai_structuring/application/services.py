@@ -34,6 +34,7 @@ from app.modules.ai_structuring.application.prompts import (
     coerce_draft,
 )
 from app.modules.ai_structuring.domain.entities import (
+    ANALYSIS_PENDING_TTL_SECONDS,
     DOC_TEXT_INPUT_CAP,
     ChatAnalysisStatus,
     ChatMessage,
@@ -252,6 +253,16 @@ class ChatIntakeService:
         self, *, session_id: UUID, actor_id: UUID, roles: frozenset[str]
     ) -> SessionDetail:
         session = await self._load_owned(session_id, actor_id=actor_id, roles=roles)
+        # Self-heal an orphaned analysis: the background task is in-process and
+        # dies with a restart without flipping the status, so a stale 'pending'
+        # would otherwise poll (and block turns/finalize) forever.
+        now = self.clock()
+        if (
+            session.analysis_status == ChatAnalysisStatus.PENDING
+            and (now - session.updated_at).total_seconds() > ANALYSIS_PENDING_TTL_SECONDS
+        ):
+            session.mark_analysis_failed(now=now)
+            await self.repo.update_session(session)
         fields = await self._fields_or_empty(session.template_version_id)
         messages = await self.repo.list_messages(session_id)
         states, is_ready = await self._field_states(session, fields)
