@@ -12,3 +12,4 @@ pyannote.audio
 huggingface_hub
 httpx
 fastapi[standard]
+piper-tts

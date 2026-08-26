@@ -21,7 +21,15 @@ body as a required query parameter (every request then 422s).
 """
 import modal
 
-from config import GPU, MODEL_ID, MODEL_REVISION, PYANNOTE_MODEL_ID, VOLUME_NAME
+from config import (
+    GPU,
+    MODEL_ID,
+    MODEL_REVISION,
+    PIPER_VOICE_ONNX,
+    PIPER_VOICE_REPO,
+    PYANNOTE_MODEL_ID,
+    VOLUME_NAME,
+)
 
 app = modal.App("bap-asr")
 image = (
@@ -45,9 +53,10 @@ image = (
         "huggingface_hub",
         "httpx",
         "fastapi[standard]",
+        "piper-tts",  # brings onnxruntime CPU — used for /synthesize
     )
     .env({"HF_HOME": "/cache"})
-    .add_local_python_source("config", "contracts", "audio_io", "model")
+    .add_local_python_source("config", "contracts", "audio_io", "model", "synth")
 )
 cache = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 hf_secret = [modal.Secret.from_name("huggingface-secret")]  # HF_TOKEN — needed for the gated pyannote pull
@@ -55,13 +64,15 @@ hf_secret = [modal.Secret.from_name("huggingface-secret")]  # HF_TOKEN — neede
 
 @app.function(image=image, volumes={"/cache": cache}, timeout=1800, secrets=hf_secret)
 def prefetch() -> None:
-    """One-time warm of the shared Volume: both the pinned GigaAM revision
-    and the gated pyannote VAD backbone (findings §4). Run before the first
-    /transcribe call."""
-    from huggingface_hub import snapshot_download
+    """One-time warm of the shared Volume: the pinned GigaAM revision, the
+    gated pyannote VAD backbone (findings §4), and the Piper TTS voice files
+    for /synthesize. Run before the first /transcribe or /synthesize call."""
+    from huggingface_hub import hf_hub_download, snapshot_download
 
     snapshot_download(MODEL_ID, revision=MODEL_REVISION)
     snapshot_download(PYANNOTE_MODEL_ID)
+    hf_hub_download(PIPER_VOICE_REPO, PIPER_VOICE_ONNX)
+    hf_hub_download(PIPER_VOICE_REPO, PIPER_VOICE_ONNX + ".json")
     cache.commit()
 
 
@@ -87,9 +98,30 @@ class Asr:
         self.model = load_model()
         warmup_longform(self.model)
 
+        # Best-effort: a TTS load failure must never crash @enter() and take
+        # down ASR with it — /synthesize just 503s if self.tts stays None.
+        self.tts = None
+        try:
+            from huggingface_hub import hf_hub_download
+
+            try:
+                from piper import PiperVoice
+            except ImportError:
+                from piper.voice import PiperVoice
+
+            onnx_path = hf_hub_download(PIPER_VOICE_REPO, PIPER_VOICE_ONNX, local_files_only=True)
+            config_path = hf_hub_download(
+                PIPER_VOICE_REPO, PIPER_VOICE_ONNX + ".json", local_files_only=True
+            )
+            self.tts = PiperVoice.load(onnx_path, config_path=config_path)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning("piper voice load failed — /synthesize will 503", exc_info=True)
+
     @modal.asgi_app(requires_proxy_auth=True)  # ONE URL for all routes
     def web(self):
-        from fastapi import FastAPI, HTTPException, Request
+        from fastapi import FastAPI, HTTPException, Request, Response
         from pydantic import BaseModel
 
         from audio_io import (
@@ -101,11 +133,15 @@ class Asr:
         )
         from contracts import ContractError, validate_monotonic
         from model import transcribe
+        from synth import SynthTextError, build_wav_bytes, validate_synth_text
 
         api = FastAPI()
 
         class TranscribeRequest(BaseModel):
             audio_url: str
+
+        class SynthesizeRequest(BaseModel):
+            text: str
 
         @api.get("/health")  # prewarm target: container has already run @modal.enter()
         async def health() -> dict[str, str]:
@@ -162,5 +198,16 @@ class Asr:
             except AsrInputError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             return _run_model(audio)
+
+        @api.post("/synthesize")
+        async def do_synthesize(body: SynthesizeRequest) -> Response:
+            if self.tts is None:
+                raise HTTPException(status_code=503, detail="TTS voice failed to load")
+            try:
+                text = validate_synth_text(body.text)
+            except SynthTextError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            wav_bytes = build_wav_bytes(self.tts, text)
+            return Response(content=wav_bytes, media_type="audio/wav")
 
         return api
