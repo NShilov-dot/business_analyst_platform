@@ -1,9 +1,11 @@
-"""Endpoint tests for POST /v1/intake-chat/transcriptions[/warmup].
+"""Endpoint tests for POST /v1/intake-chat/transcriptions[/speech|/warmup].
 
 Covers:
 - happy path (200), content-type normalization (webm;codecs=opus), unsupported
   type (415), oversized upload (413 — proves the middleware exemption works),
   disabled feature with no override (503), empty upload (422), warmup (202).
+- speech synthesis: happy path (200, audio/wav bytes), disabled feature (503),
+  empty/whitespace text (422), over-max-length text (422, pydantic).
 """
 
 from __future__ import annotations
@@ -31,16 +33,22 @@ def _principal(*roles: str) -> Principal:
 
 
 class _FakeTranscriber:
-    def __init__(self, *, text: str = "hello world") -> None:
+    def __init__(self, *, text: str = "hello world", audio: bytes = b"RIFF....WAVEfmt ") -> None:
         self._text = text
+        self._audio = audio
         self.received: bytes | None = None
         self.received_content_type: str | None = None
+        self.synthesized_text: str | None = None
         self.warmup_called = False
 
     async def transcribe(self, *, content: bytes, content_type: str, filename: str) -> str:
         self.received = content
         self.received_content_type = content_type
         return self._text
+
+    async def synthesize(self, *, text: str) -> bytes:
+        self.synthesized_text = text
+        return self._audio
 
     async def warmup(self) -> None:
         self.warmup_called = True
@@ -147,6 +155,60 @@ async def test_transcribe_empty_upload_rejected() -> None:
         r = await ac.post(
             "/v1/intake-chat/transcriptions",
             files={"file": ("v.wav", b"", "audio/wav")},
+        )
+        assert r.status_code == 422
+
+
+async def test_synthesize_speech_happy_path() -> None:
+    fake = _FakeTranscriber(audio=b"RIFF....WAVEfmt ")
+    async for ac, f in _make_client(fake=fake):
+        r = await ac.post(
+            "/v1/intake-chat/transcriptions/speech",
+            json={"text": "Здравствуйте, чем могу помочь?"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"] == "audio/wav"
+        assert r.content == b"RIFF....WAVEfmt "
+        assert f is not None
+        assert f.synthesized_text == "Здравствуйте, чем могу помочь?"
+
+
+async def test_synthesize_speech_disabled_feature_returns_503() -> None:
+    # No override for _transcriber: falls through to the real dependency,
+    # which reads settings — conftest leaves TRANSCRIPTION_* unset.
+    async for ac, _ in _make_client(override_transcriber=False):
+        r = await ac.post(
+            "/v1/intake-chat/transcriptions/speech",
+            json={"text": "hello"},
+        )
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "TRANSCRIPTION_UNAVAILABLE"
+
+
+async def test_synthesize_speech_empty_text_rejected() -> None:
+    async for ac, _ in _make_client():
+        r = await ac.post(
+            "/v1/intake-chat/transcriptions/speech",
+            json={"text": ""},
+        )
+        assert r.status_code == 422
+
+
+async def test_synthesize_speech_whitespace_only_text_rejected() -> None:
+    async for ac, _ in _make_client():
+        r = await ac.post(
+            "/v1/intake-chat/transcriptions/speech",
+            json={"text": "   "},
+        )
+        assert r.status_code == 422
+        assert r.json()["error"]["code"] == "CHAT_VALIDATION_ERROR"
+
+
+async def test_synthesize_speech_text_over_max_length_rejected() -> None:
+    async for ac, _ in _make_client():
+        r = await ac.post(
+            "/v1/intake-chat/transcriptions/speech",
+            json={"text": "x" * 2001},
         )
         assert r.status_code == 422
 

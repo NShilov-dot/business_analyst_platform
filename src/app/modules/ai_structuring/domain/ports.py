@@ -128,6 +128,11 @@ class TranscriptionPort(Protocol):
 
     async def transcribe(self, *, content: bytes, content_type: str, filename: str) -> str: ...
 
+    async def synthesize(self, *, text: str) -> bytes:
+        """TTS for one assistant reply. The adapter owns transport; on
+        provider failure it raises TranscriptionUnavailableError."""
+        ...
+
     async def warmup(self) -> None:
         """Best-effort prewarm; a no-op for non-Modal adapters."""
         ...
