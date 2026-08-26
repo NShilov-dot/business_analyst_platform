@@ -6,7 +6,7 @@
  * действие: создаёт тикет и отправляет его на триаж от имени заявителя.
  */
 
-import { api, postForm } from './client'
+import { api, postForm, postJsonForBlob } from './client'
 
 export type ChatSessionStatus = 'active' | 'submitted' | 'discarded'
 export type ChatRole = 'user' | 'assistant'
@@ -101,4 +101,7 @@ export const intakeChatApi = {
 
   warmupTranscription: () =>
     api.post<Envelope<{ status: string }>>('/v1/intake-chat/transcriptions/warmup'),
+
+  synthesizeSpeech: (text: string) =>
+    postJsonForBlob('/v1/intake-chat/transcriptions/speech', { text }),
 }
