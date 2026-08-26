@@ -60,20 +60,35 @@ class ModalTranscriptionGateway:
         )
 
     async def _post(
-        self, path: str, *, files: dict[str, tuple[str, bytes, str]]
+        self,
+        path: str,
+        *,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
+        json: dict[str, object] | None = None,
     ) -> httpx.Response:
         """POST via the injected client if present, else a one-off client —
         either way with the same timeout/redirect behavior (Modal's 150s
-        response cut answers with a 303 to a result URL)."""
+        response cut answers with a 303 to a result URL). Callers pass either
+        `files` (transcribe, multipart) or `json` (synthesize)."""
         url = f"{self._url}{path}"
         client = self._http
         if client is not None:
             return await client.post(
-                url, files=files, headers=self._headers, timeout=_TIMEOUT, follow_redirects=True
+                url,
+                files=files,
+                json=json,
+                headers=self._headers,
+                timeout=_TIMEOUT,
+                follow_redirects=True,
             )
         async with httpx.AsyncClient() as one_off:
             return await one_off.post(
-                url, files=files, headers=self._headers, timeout=_TIMEOUT, follow_redirects=True
+                url,
+                files=files,
+                json=json,
+                headers=self._headers,
+                timeout=_TIMEOUT,
+                follow_redirects=True,
             )
 
     async def _get(self, path: str) -> httpx.Response:
@@ -121,6 +136,31 @@ class ModalTranscriptionGateway:
                 "Transcription service returned an unparseable response"
             )
         return text.strip()
+
+    async def synthesize(self, *, text: str) -> bytes:
+        try:
+            response = await self._post("/synthesize", json={"text": text})
+        except httpx.HTTPError as exc:
+            log.warning("Modal synthesis request failed: %s", exc)
+            raise TranscriptionUnavailableError("Speech synthesis service request failed") from exc
+
+        if response.status_code != 200:
+            log.warning(
+                "Modal synthesis returned %s: %s",
+                response.status_code,
+                response.text[:500],
+            )
+            raise TranscriptionUnavailableError(
+                f"Speech synthesis service returned status {response.status_code}"
+            )
+
+        content = response.content
+        if not content:
+            log.warning("Modal synthesis returned an empty response body")
+            raise TranscriptionUnavailableError(
+                "Speech synthesis service returned an empty response"
+            )
+        return content
 
     async def warmup(self) -> None:
         """Best-effort prewarm — swallows every exception; a slow/failed warmup

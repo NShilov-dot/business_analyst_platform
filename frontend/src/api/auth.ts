@@ -4,6 +4,11 @@ export interface Me {
   subject: string
   tenant_id: string
   roles: string[]
+  username: string | null
+  email: string | null
+  given_name: string | null
+  family_name: string | null
+  name: string | null
 }
 
 export interface LogoutResult {

@@ -110,6 +110,51 @@ async def test_transcribe_follows_redirect_on_injected_client() -> None:
     assert calls == ["/transcribe", "/result/abc"]
 
 
+async def test_synthesize_happy_path_sends_auth_headers_and_json() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["headers"] = request.headers
+        captured["body"] = request.content
+        return httpx.Response(200, content=b"RIFF....WAVEfmt ")
+
+    gateway = _gateway(httpx.MockTransport(handler))
+    audio = await gateway.synthesize(text="Здравствуйте")
+
+    assert audio == b"RIFF....WAVEfmt "
+    headers = captured["headers"]
+    assert headers["Modal-Key"] == "wk-key"
+    assert headers["Modal-Secret"] == "ws-secret"
+    assert "Здравствуйте".encode() in captured["body"]  # type: ignore[operator]
+
+
+async def test_synthesize_non_200_raises_unavailable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom")
+
+    gateway = _gateway(httpx.MockTransport(handler))
+    with pytest.raises(TranscriptionUnavailableError):
+        await gateway.synthesize(text="hello")
+
+
+async def test_synthesize_connect_error_raises_unavailable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    gateway = _gateway(httpx.MockTransport(handler))
+    with pytest.raises(TranscriptionUnavailableError):
+        await gateway.synthesize(text="hello")
+
+
+async def test_synthesize_empty_body_raises_unavailable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"")
+
+    gateway = _gateway(httpx.MockTransport(handler))
+    with pytest.raises(TranscriptionUnavailableError):
+        await gateway.synthesize(text="hello")
+
+
 async def test_warmup_swallows_every_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")

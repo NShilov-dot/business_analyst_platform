@@ -25,3 +25,11 @@ DOWNLOAD_TIMEOUT_S = 300.0  # generous — hour-long file over a possibly slow l
 
 # model.py dispatch boundary (findings §4: transcribe() hard-rejects >25s)
 LONGFORM_THRESHOLD_S = 25.0
+
+# Piper TTS voice for /synthesize (docs/voice-turns-design.md §2.1) — Russian
+# only, per the phase-1 scope decision (assistant replies are always ru).
+# The .json sidecar config lives at the same HF path with ".json" appended.
+PIPER_VOICE_REPO = "rhasspy/piper-voices"
+PIPER_VOICE_ONNX = "ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx"
+
+SYNTH_TEXT_MAX = 2000

@@ -5,6 +5,7 @@ import { SidebarProvider, SidebarTrigger } from './sidebar-context'
 import { AppSidebar } from './AppSidebar'
 import { Toaster } from '@/components/ui/sonner'
 import { useAuth } from '../../auth/AuthProvider'
+import { displayName, primaryRoleLabel, userInitials } from '@/lib/user'
 
 // Route → header title/subtitle, per the design's page map. First matching
 // prefix wins, so keep the more specific paths on top.
@@ -15,16 +16,6 @@ const PAGE_TITLES: Array<[string, string, string]> = [
   ['/tasks', 'Задачи (демо)', 'Стартовый демо-модуль платформы.'],
   ['/profile', 'Профиль', 'Данные текущей сессии.'],
   ['/', 'Обзор портфеля', 'Ключевые метрики приёма и ведения бизнес-запросов.'],
-]
-
-// Keycloak realm roles → display label for the header chip.
-const ROLE_LABELS: Array<[string, string]> = [
-  ['ba', 'Бизнес-аналитик'],
-  ['business_owner', 'Бизнес-заказчик'],
-  ['executor', 'Исполнитель'],
-  ['approver', 'Согласующий'],
-  ['tenant_admin', 'Администратор'],
-  ['platform_admin', 'Администратор платформы'],
 ]
 
 function IconButton({ icon: Icon, label }: { icon: typeof Search; label: string }) {
@@ -52,9 +43,8 @@ function Header() {
       prefix === '/' ? pathname === '/' : pathname.startsWith(prefix),
     ) ?? PAGE_TITLES[PAGE_TITLES.length - 1]
 
-  const roleLabel =
-    ROLE_LABELS.find(([role]) => user.roles.includes(role))?.[1] ?? 'Заявитель'
-  const initials = user.subject.slice(0, 2).toUpperCase()
+  const roleLabel = primaryRoleLabel(user.roles)
+  const initials = userInitials(user)
 
   return (
     <header className="sticky top-0 z-10 flex shrink-0 items-center gap-3 border-b border-border bg-card px-3 py-3 sm:gap-5 sm:px-8 sm:pb-[18px] sm:pt-[22px]">
@@ -84,8 +74,8 @@ function Header() {
             {initials}
           </div>
           <div className="hidden leading-tight lg:block">
-            <div className="text-[13px] font-semibold">{roleLabel}</div>
-            <div className="text-[11px] text-muted-foreground">{user.tenant_id}</div>
+            <div className="text-[13px] font-semibold">{displayName(user)}</div>
+            <div className="text-[11px] text-muted-foreground">{roleLabel}</div>
           </div>
         </div>
       </div>

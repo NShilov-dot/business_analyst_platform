@@ -26,7 +26,9 @@ export class ApiError extends Error {
   }
 }
 
-async function handleResponse<T>(res: Response, path: string): Promise<T> {
+// Shared 401/error handling — split out so blob responses (postJsonForBlob)
+// can reuse it without going through handleResponse's res.json() success path.
+async function checkResponse(res: Response, path: string): Promise<void> {
   if (res.status === 401) {
     // Session is dead — kick the user back through the OIDC flow.
     // /auth/me is the one exception (the AuthProvider handles that case itself).
@@ -40,7 +42,10 @@ async function handleResponse<T>(res: Response, path: string): Promise<T> {
     const errBody = await res.json().catch(() => null)
     throw new ApiError(res.status, errBody)
   }
+}
 
+async function handleResponse<T>(res: Response, path: string): Promise<T> {
+  await checkResponse(res, path)
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
@@ -71,6 +76,21 @@ export async function postForm<T>(path: string, form: FormData): Promise<T> {
     body: form,
   })
   return handleResponse<T>(res, path)
+}
+
+/**
+ * JSON POST that returns a binary blob (e.g. synthesized speech audio).
+ * Same 401/error handling as JSON requests — only the success path differs.
+ */
+export async function postJsonForBlob(path: string, body: unknown): Promise<Blob> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  await checkResponse(res, path)
+  return res.blob()
 }
 
 export const api = {

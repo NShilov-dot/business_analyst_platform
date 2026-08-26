@@ -29,6 +29,15 @@ const CAP_WARN_S = 30
 // good enough to skip empty near-instant taps without decoding the blob.
 const MIN_BLOB_BYTES = 1000
 
+// VAD (voice-activity detection), used only when autoStopOnSilence is on.
+// Rides the same ~50ms sampling grid the waveform already runs on.
+const VAD_CALIBRATION_MS = 300 // first stretch of a recording: sample the noise floor, don't judge speech yet
+const VAD_FLOOR_MULTIPLIER = 2.5 // silence threshold = max(floor * this, VAD_MIN_THRESHOLD)
+const VAD_MIN_THRESHOLD = 0.012 // floor for a near-silent room/mic
+const VAD_SAMPLE_MS = 50 // approximate step between samples (matches the sampling grid below)
+const VAD_MIN_SPEECH_MS = 1000 // must hear this much cumulative speech before auto-stop is allowed to arm
+const VAD_SILENCE_STOP_MS = 1800 // once armed, this much continuous silence triggers stopRecording()
+
 function pickMime(): { mime: string; ext: string } | null {
   if (typeof MediaRecorder.isTypeSupported === 'function') {
     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -67,11 +76,18 @@ export function VoiceRecordButton({
   onTranscript,
   onTranscribingChange,
   onRecordingChange,
+  autoStopOnSilence,
+  startSignal,
 }: {
   disabled: boolean
   onTranscript: (text: string) => void
   onTranscribingChange?: (transcribing: boolean) => void
   onRecordingChange?: (recording: boolean) => void
+  // Voice-mode loop: auto-stop on silence (VAD) instead of waiting for a manual tap.
+  autoStopOnSilence?: boolean
+  // Voice-mode loop: bump to a new number to imperatively (re-)arm the mic,
+  // e.g. right after the assistant finishes speaking. No-ops unless idle.
+  startSignal?: number
 }) {
   const [state, setState] = useState<RecordState>('idle')
   const [elapsed, setElapsed] = useState(0)
@@ -89,6 +105,13 @@ export function VoiceRecordButton({
   const levelsRef = useRef<number[]>([])
   const lastSampleRef = useRef(0)
   const startedAtRef = useRef(0)
+  // VAD state — reset per recording in startRecording(). See constants above.
+  const vadFloorSumRef = useRef(0)
+  const vadFloorCountRef = useRef(0)
+  const vadThresholdRef = useRef<number | null>(null)
+  const vadSpeechMsRef = useRef(0)
+  const vadSilenceMsRef = useRef(0)
+  const vadArmedRef = useRef(false)
   // Set by the cancel button: the onstop handler discards instead of uploading.
   const discardRef = useRef(false)
   // Re-entrancy guard for startRecording: set synchronously before the
@@ -107,6 +130,8 @@ export function VoiceRecordButton({
   onTranscribingChangeRef.current = onTranscribingChange
   const onRecordingChangeRef = useRef(onRecordingChange)
   onRecordingChangeRef.current = onRecordingChange
+  const autoStopOnSilenceRef = useRef(autoStopOnSilence)
+  autoStopOnSilenceRef.current = autoStopOnSilence
 
   const supported =
     typeof navigator !== 'undefined' &&
@@ -201,6 +226,26 @@ export function VoiceRecordButton({
       const rms = Math.sqrt(sum / buf.length) / 128
       levelsRef.current.push(Math.min(1, rms * 4))
       if (levelsRef.current.length > 400) levelsRef.current.shift()
+      if (autoStopOnSilenceRef.current) {
+        const elapsedMs = now - startedAtRef.current
+        if (elapsedMs < VAD_CALIBRATION_MS) {
+          vadFloorSumRef.current += rms
+          vadFloorCountRef.current += 1
+        } else {
+          if (vadThresholdRef.current === null) {
+            const floor = vadFloorCountRef.current > 0 ? vadFloorSumRef.current / vadFloorCountRef.current : 0
+            vadThresholdRef.current = Math.max(floor * VAD_FLOOR_MULTIPLIER, VAD_MIN_THRESHOLD)
+          }
+          if (rms > vadThresholdRef.current) {
+            vadSpeechMsRef.current += VAD_SAMPLE_MS
+            vadSilenceMsRef.current = 0
+            if (vadSpeechMsRef.current >= VAD_MIN_SPEECH_MS) vadArmedRef.current = true
+          } else {
+            vadSilenceMsRef.current += VAD_SAMPLE_MS
+            if (vadArmedRef.current && vadSilenceMsRef.current >= VAD_SILENCE_STOP_MS) stopRecording()
+          }
+        }
+      }
     }
     paintWaveform()
     rafRef.current = requestAnimationFrame(frame)
@@ -240,6 +285,12 @@ export function VoiceRecordButton({
       levelsRef.current = []
       startedAtRef.current = performance.now()
       lastSampleRef.current = 0
+      vadFloorSumRef.current = 0
+      vadFloorCountRef.current = 0
+      vadThresholdRef.current = null
+      vadSpeechMsRef.current = 0
+      vadSilenceMsRef.current = 0
+      vadArmedRef.current = false
       setElapsed(0)
       recorder.start()
       setState('recording')
@@ -281,6 +332,17 @@ export function VoiceRecordButton({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [state])
+
+  // Imperative "start" signal for the voice-mode loop: the parent bumps
+  // startSignal to a new number (e.g. once TTS playback ends) to re-arm the
+  // mic without the user tapping it. Compares against the previous value so
+  // it never fires on mount, and only starts from idle when not disabled.
+  const prevStartSignalRef = useRef(startSignal)
+  useEffect(() => {
+    if (startSignal === undefined || startSignal === prevStartSignalRef.current) return
+    prevStartSignalRef.current = startSignal
+    if (state === 'idle' && !disabled) void startRecording()
+  }, [startSignal, state, disabled])
 
   const handleStopped = async () => {
     // Covers stream-initiated stops too (permission revoked, mic unplugged)

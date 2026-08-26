@@ -16,7 +16,17 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -58,6 +68,7 @@ from app.modules.ai_structuring.interface.schemas import (
     RenameSessionRequest,
     SendMessageRequest,
     SessionDetailResponse,
+    SpeechRequest,
     StartSessionRequest,
     TranscriptionResponse,
     TurnResponse,
@@ -120,6 +131,11 @@ class _DisabledTranscriber:
     """TranscriptionPort stand-in when transcription is not configured."""
 
     async def transcribe(self, *, content: bytes, content_type: str, filename: str) -> str:
+        raise TranscriptionUnavailableError(
+            "Voice transcription is not configured (TRANSCRIPTION_URL is not set)"
+        )
+
+    async def synthesize(self, *, text: str) -> bytes:
         raise TranscriptionUnavailableError(
             "Voice transcription is not configured (TRANSCRIPTION_URL is not set)"
         )
@@ -410,6 +426,26 @@ async def transcribe_voice(
         content=data, content_type=content_type, filename=file.filename or "voice"
     )
     return Envelope(data=TranscriptionResponse(text=text))
+
+
+@router.post(
+    "/transcriptions/speech",
+    summary="Synthesize the assistant's reply to speech (nothing is persisted)",
+)
+async def synthesize_speech(
+    body: SpeechRequest,
+    transcriber: TranscriberDep,
+    principal: PrincipalDep,
+) -> Response:
+    # Auth: router-level check_rate_limit -> PrincipalDep -> 401 without a session.
+    # Deliberately WITHOUT SessionDep/TenantDep: no DB work happens here, and a
+    # pooled connection must not be held through a Modal call that can run for
+    # minutes on a cold start (same reasoning as transcribe_voice).
+    log.info("speech synthesis requested by %s", principal.subject)
+    if not body.text.strip():
+        raise ChatValidationError("Empty text for speech synthesis")
+    audio = await transcriber.synthesize(text=body.text)
+    return Response(content=audio, media_type="audio/wav")
 
 
 @router.post(

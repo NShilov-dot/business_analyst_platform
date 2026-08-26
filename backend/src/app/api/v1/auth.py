@@ -273,10 +273,18 @@ async def logout(request: Request, oidc: OIDCDep, sessions: SessionStoreDep) -> 
 
 @router.get("/me", summary="Current user info")
 async def me(principal: PrincipalDep) -> dict[str, object]:
+    # Profile fields come from the verified access-token claims (Keycloak's
+    # default `profile`/`email` client scopes); absent claims surface as null.
+    claims = principal.raw_claims
     return {
         "subject": principal.subject,
         "tenant_id": str(principal.tenant_id),
         "roles": sorted(principal.roles),
+        "username": claims.get("preferred_username"),
+        "email": claims.get("email"),
+        "given_name": claims.get("given_name"),
+        "family_name": claims.get("family_name"),
+        "name": claims.get("name"),
     }
 
 

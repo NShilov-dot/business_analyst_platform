@@ -64,6 +64,12 @@ class RenameSessionRequest(BaseModel):
     draft_title: str = Field(min_length=1, max_length=200)
 
 
+class SpeechRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=2000)
+
+
 # ---------------------------------------------------------------------------
 # Responses
 # ---------------------------------------------------------------------------

@@ -14,6 +14,8 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -33,6 +35,83 @@ import { VoiceRecordButton } from '@/components/VoiceRecordButton'
 // and back (or reloading) resumes the same session — the analysis is never
 // lost. finalize() clears it on success.
 export const INTAKE_SESSION_STORAGE_KEY = 'intake:sessionId'
+const VOICE_MODE_STORAGE_KEY = 'intake:voiceMode'
+
+// Module-level singleton: iOS/Safari only allow .play() when it's triggered
+// by (or chained directly off) a user gesture. We "bless" this one element
+// once, in the voice-mode toggle's click handler, and reuse it for every
+// synthesized reply afterward — a fresh Audio() per reply would need its own
+// unlock and silently fail to autoplay.
+const sharedAudio: HTMLAudioElement | null = typeof Audio !== 'undefined' ? new Audio() : null
+
+// Play a short *valid* silent clip from inside a user gesture so later
+// programmatic .play() calls (after the async TTS fetch resolves, well outside
+// any gesture) are allowed by the browser autoplay policy. `audioUnlocked`
+// flips true only once the silent play actually succeeds — a still-blocked
+// attempt leaves it false so the next gesture retries. (The old clip had a
+// zero-length data chunk, which some browsers refuse to play → never unlocked.)
+function makeSilentWavUrl(): string {
+  // 44-byte WAV header + ~50ms of 16-bit PCM silence, built at runtime so we
+  // don't carry a giant base64 literal. A valid non-empty clip matters: the
+  // old zero-length-data clip failed to unlock playback on some browsers.
+  if (typeof URL === 'undefined' || typeof Blob === 'undefined') return ''
+  const sampleRate = 8000
+  const n = Math.floor(sampleRate * 0.05)
+  const buf = new ArrayBuffer(44 + n * 2)
+  const dv = new DataView(buf)
+  const w = (o: number, str: string) => {
+    for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i))
+  }
+  w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE')
+  w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true)
+  dv.setUint32(24, sampleRate, true); dv.setUint32(28, sampleRate * 2, true)
+  dv.setUint16(32, 2, true); dv.setUint16(34, 16, true)
+  w(36, 'data'); dv.setUint32(40, n * 2, true)
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+}
+const SILENT_WAV = makeSilentWavUrl()
+
+// Flips true only once the silent clip actually plays — a still-blocked
+// attempt leaves it false so the next gesture retries. Module-level so it
+// survives the pre-session → active remount.
+let audioUnlocked = false
+function unlockAudio() {
+  if (!sharedAudio || audioUnlocked) return
+  sharedAudio.src = SILENT_WAV
+  const p = sharedAudio.play()
+  if (!p) {
+    audioUnlocked = true
+    return
+  }
+  p.then(() => {
+    audioUnlocked = true
+    sharedAudio?.pause()
+    if (sharedAudio) sharedAudio.currentTime = 0
+  }).catch(() => {
+    // still blocked (e.g. no real gesture yet) — a later gesture retries
+  })
+}
+
+// Short "listening" cue (WebAudio oscillator, no audio assets) played right
+// before the mic auto-arms, so the user knows to start talking.
+function playListenBeep() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.frequency.value = 880
+    gain.gain.value = 0.05
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.12)
+    osc.onended = () => void ctx.close()
+  } catch {
+    // best-effort cue only — never block the voice loop over it
+  }
+}
 
 const GREETING =
   'Здравствуйте! Я помогу оформить бизнес-заявку. Опишите задачу своими словами — ' +
@@ -140,8 +219,33 @@ export default function IntakeChatPage() {
   // Inline draft-title editing in the active-session header.
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  // Voice mode: walkie-talkie loop (listen -> transcribe -> send -> speak ->
+  // listen again). Persisted so the toggle survives a reload.
+  const [voiceMode, setVoiceMode] = useState(() => localStorage.getItem(VOICE_MODE_STORAGE_KEY) === '1')
+  const [speaking, setSpeaking] = useState(false)
+  // Bumped to re-arm the mic (VoiceRecordButton's startSignal prop) once TTS
+  // playback for a reply finishes.
+  const [listenSignal, setListenSignal] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // Set while an interrupt (voice mode off / Esc / mic click) is stopping
+  // playback, so the in-flight speakReply() doesn't re-arm the loop anyway.
+  const suppressArmRef = useRef(false)
+  // Resolves the "wait for playback to end" promise inside speakReply — also
+  // used by stopSpeaking() to unblock it early on an interrupt.
+  const speakResolveRef = useRef<(() => void) | null>(null)
+  // Latest-value refs: the re-arm logic runs inside async callbacks captured
+  // at an earlier render — notably the pre-session turn that just created the
+  // session, where `detail` was still null and `voiceMode` could since have
+  // been turned off. Reading refs avoids acting on that stale closure state.
+  const voiceModeRef = useRef(voiceMode)
+  voiceModeRef.current = voiceMode
+  const sessionActiveRef = useRef(false)
+  sessionActiveRef.current = detail?.session.status === 'active'
+
+  useEffect(() => {
+    localStorage.setItem(VOICE_MODE_STORAGE_KEY, voiceMode ? '1' : '0')
+  }, [voiceMode])
 
   const seedComposer = (text: string) => {
     setInput(text)
@@ -216,6 +320,23 @@ export default function IntakeChatPage() {
     void intakeChatApi.warmupTranscription().catch(() => {})
   }, [])
 
+  // Unlock TTS playback on the FIRST user gesture of any kind — not just the
+  // voice-mode toggle. voiceMode persists in localStorage, so a returning user
+  // can start the loop (tap the mic) without clicking the toggle this session;
+  // without a gesture-blessed <audio> element the browser silently blocks
+  // audio.play() and every assistant reply is inaudible. Idempotent (guarded
+  // by audioUnlocked), so leaving the listeners on until unmount is harmless.
+  useEffect(() => {
+    if (audioUnlocked) return
+    const onGesture = () => unlockAudio()
+    window.addEventListener('pointerdown', onGesture)
+    window.addEventListener('keydown', onGesture)
+    return () => {
+      window.removeEventListener('pointerdown', onGesture)
+      window.removeEventListener('keydown', onGesture)
+    }
+  }, [])
+
   const analysisStatus = detail?.session.analysis_status
   const analyzing = analysisStatus === 'pending' && detail?.session.status === 'active'
   const analysisFailed = analysisStatus === 'failed'
@@ -223,8 +344,8 @@ export default function IntakeChatPage() {
   // Create the session lazily (with any attached documents), then optionally
   // send the first user message.
   const startAndMaybeSend = useCallback(
-    async (firstMessage?: string) => {
-      if (starting) return
+    async (firstMessage?: string): Promise<string | null> => {
+      if (starting) return null
       setStarting(true)
       try {
         const { data } = await intakeChatApi.startSession(undefined, pendingDocIds)
@@ -233,6 +354,7 @@ export default function IntakeChatPage() {
         // first getSession sees the persisted turn and cannot clobber the local
         // messages. A message can't be sent while documents are still analysing
         // (backend rejects it), so only the no-documents path auto-sends.
+        let reply: string | null = null
         if (firstMessage && data.session.analysis_status !== 'pending') {
           const turn = await intakeChatApi.sendMessage(data.session.id, firstMessage)
           const userMsg: ChatMessage = {
@@ -247,10 +369,12 @@ export default function IntakeChatPage() {
           setHasOpener(data.messages.length > 0)
           setFields(turn.data.fields)
           setIsReady(turn.data.is_ready)
+          reply = turn.data.reply.content
         } else {
           seedFrom(data)
         }
         setSessionId(data.session.id) // enables the resume query + polling
+        return reply
       } catch (err) {
         // Same append-preserving restore as sendText's catch — otherwise a
         // dictated (or typed) first message just vanishes on failure.
@@ -258,6 +382,7 @@ export default function IntakeChatPage() {
           setInput((prev) => (prev.trim() ? `${prev} ${firstMessage}` : firstMessage))
         }
         toast.error(errorMessage(err))
+        return null
       } finally {
         setStarting(false)
       }
@@ -267,11 +392,12 @@ export default function IntakeChatPage() {
 
   // Send a message to the active session. Extracted from send() so a
   // transcribed voice message can be sent the same way as typed text,
-  // without going through the composer's input state.
+  // without going through the composer's input state. Returns the assistant's
+  // reply text (or null on no-op/failure) so the voice loop can speak it.
   const sendText = useCallback(
-    async (content: string) => {
-      if (!content || !detail) return
-      if (thinking || analyzing || starting) return
+    async (content: string): Promise<string | null> => {
+      if (!content || !detail) return null
+      if (thinking || analyzing || starting) return null
       setThinking(true)
       const optimistic: ChatMessage = {
         id: `local-${Date.now()}`,
@@ -287,6 +413,7 @@ export default function IntakeChatPage() {
         setMessages((m) => [...m, data.reply])
         setFields(data.fields)
         setIsReady(data.is_ready)
+        return data.reply.content
       } catch (err) {
         setMessages((m) => m.filter((msg) => msg.id !== optimistic.id))
         // Append rather than replace: the typed path already cleared the
@@ -295,12 +422,118 @@ export default function IntakeChatPage() {
         // that must survive a failed auto-send.
         setInput((prev) => (prev.trim() ? `${prev} ${content}` : content))
         toast.error(errorMessage(err))
+        return null
       } finally {
         setThinking(false)
       }
     },
     [detail, thinking, analyzing, starting, messages.length],
   )
+
+  // Re-arms the mic after a reply has been spoken (or failed to speak). Skips
+  // the auto-arm if voice mode got turned off in the meantime, the tab is in
+  // the background, or the session is no longer active (submitted/discarded).
+  const armListenLoop = useCallback(() => {
+    // Reads live refs (see above), not closure state — speakReply may have been
+    // captured in the pre-session render, before the first message existed.
+    if (!voiceModeRef.current || document.hidden) return
+    if (!sessionActiveRef.current) return
+    playListenBeep()
+    setListenSignal((n) => n + 1)
+  }, [])
+
+  // Stops whatever the shared <audio> is doing right now (interrupt path:
+  // mic click, voice mode off, Esc) and tells the in-flight speakReply (if
+  // any) not to re-arm the loop once it unwinds.
+  const stopSpeaking = useCallback(() => {
+    suppressArmRef.current = true
+    sharedAudio?.pause()
+    speakResolveRef.current?.()
+    setSpeaking(false)
+  }, [])
+
+  // Synthesizes and plays one assistant reply, then re-arms listening.
+  // Best-effort: a synthesis or playback error toasts once and still re-arms
+  // the loop — the reply text is already on screen either way.
+  const speakReply = useCallback(
+    async (text: string) => {
+      const audio = sharedAudio
+      if (!audio) {
+        armListenLoop()
+        return
+      }
+      setSpeaking(true)
+      suppressArmRef.current = false
+      let url: string | null = null
+      try {
+        const blob = await intakeChatApi.synthesizeSpeech(text)
+        url = URL.createObjectURL(blob)
+        audio.src = url
+        await new Promise<void>((resolve) => {
+          speakResolveRef.current = resolve
+          audio.onended = () => resolve()
+          audio.onerror = () => resolve()
+          void audio.play().catch((err: unknown) => {
+            // Most likely the autoplay policy blocked us (NotAllowedError) —
+            // log it so a silent loop is never a silent mystery again.
+            const e = err as { name?: string; message?: string }
+            console.warn('[voice] TTS playback blocked/failed:', e?.name, e?.message)
+            resolve()
+          })
+        })
+      } catch {
+        toast.error('Не удалось озвучить ответ — текст уже на экране.')
+      } finally {
+        speakResolveRef.current = null
+        audio.onended = null
+        audio.onerror = null
+        if (url) URL.revokeObjectURL(url)
+        setSpeaking(false)
+        if (!suppressArmRef.current) armListenLoop()
+      }
+    },
+    [armListenLoop],
+  )
+
+  const toggleVoiceMode = useCallback(() => {
+    const next = !voiceMode
+    // Unlock playback INSIDE the click handler — this is the user gesture
+    // iOS/Safari requires; doing it in an effect risks missing the window.
+    if (next) {
+      unlockAudio()
+      // Turning voice mode ON *is* the "start the conversation" gesture — arm
+      // the mic now (beep + startSignal bump) so the walkie-talkie loop begins
+      // without a separate mic tap. Works in the pre-session composer (detail
+      // null) and an active session alike; skipped once submitted.
+      if (!detail || detail.session.status === 'active') {
+        playListenBeep()
+        setListenSignal((n) => n + 1)
+      }
+    } else {
+      stopSpeaking()
+    }
+    setVoiceMode(next)
+  }, [voiceMode, detail, stopSpeaking])
+
+  // Esc turns voice mode off (and, via the effect below, stops playback).
+  // Recording itself is cancelled by VoiceRecordButton's own Esc handler —
+  // we don't reach into the recorder here.
+  useEffect(() => {
+    if (!voiceMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setVoiceMode(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [voiceMode])
+
+  // Mic click while the assistant is speaking interrupts playback and starts
+  // listening — `recording` flips true via the button's own click handler,
+  // this just silences the shared audio in response (the "existing button
+  // click flow" the design calls for, no changes needed inside the button).
+  useEffect(() => {
+    if (recording && speaking) stopSpeaking()
+  }, [recording, speaking, stopSpeaking])
 
   const send = useCallback(async () => {
     const content = input.trim()
@@ -321,6 +554,7 @@ export default function IntakeChatPage() {
 
   const finalize = useCallback(async () => {
     if (!detail || finalizing) return
+    stopSpeaking() // voice loop stops the moment the session leaves 'active'
     setFinalizing(true)
     try {
       const { data } = await intakeChatApi.finalize(detail.session.id)
@@ -333,7 +567,7 @@ export default function IntakeChatPage() {
     } finally {
       setFinalizing(false)
     }
-  }, [detail, finalizing, qc])
+  }, [detail, finalizing, qc, stopSpeaking])
 
   // Resume a stored draft (F).
   const resumeDraft = (id: string) => {
@@ -344,6 +578,7 @@ export default function IntakeChatPage() {
   // Discard the active session and return to a fresh workspace (G).
   const discardSession = useCallback(async () => {
     if (!detail) return
+    stopSpeaking()
     try {
       await intakeChatApi.discard(detail.session.id)
     } catch (err) {
@@ -361,7 +596,7 @@ export default function IntakeChatPage() {
     setInput('')
     void qc.invalidateQueries({ queryKey: ['intake-sessions'] })
     toast.success('Черновик очищен')
-  }, [detail, qc])
+  }, [detail, qc, stopSpeaking])
 
   // Save an inline-edited draft title (G).
   const saveTitle = useCallback(async () => {
@@ -616,16 +851,41 @@ export default function IntakeChatPage() {
                 className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               />
             )}
+            <button
+              type="button"
+              onClick={toggleVoiceMode}
+              aria-pressed={voiceMode}
+              aria-label={voiceMode ? 'Выключить голосовой режим' : 'Включить голосовой режим'}
+              title="Голосовой режим: ассистент отвечает голосом, микрофон включается сам. Лучше в наушниках."
+              className={cn(
+                'flex h-11 w-11 flex-none items-center justify-center rounded-[11px] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                voiceMode
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-input bg-card text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {voiceMode ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            </button>
             <VoiceRecordButton
               disabled={starting}
               onTranscribingChange={setTranscribing}
               onRecordingChange={setRecording}
+              autoStopOnSilence={voiceMode}
+              startSignal={listenSignal}
               onTranscript={(t) => {
                 // Documents still need "Начать" to be pressed explicitly (a
                 // turn can't be sent while they're being analysed) — seed the
                 // composer instead of auto-sending in that case.
-                if (pendingDocIds.length > 0) seedComposer(input ? `${input} ${t}` : t)
-                else void startAndMaybeSend(t)
+                if (pendingDocIds.length > 0) {
+                  seedComposer(input ? `${input} ${t}` : t)
+                  return
+                }
+                // In voice mode this first turn creates the session; once it
+                // returns the assistant's reply we speak it, and speakReply's
+                // re-arm continues the loop in the now-active composer.
+                void startAndMaybeSend(t).then((reply) => {
+                  if (voiceMode && reply) void speakReply(reply)
+                })
               }}
             />
             {!recording && (
@@ -729,47 +989,86 @@ export default function IntakeChatPage() {
               Сессия завершена — заявка отправлена на триаж
             </div>
           ) : (
-            <div className="flex items-end gap-2.5">
-              {!recording && (
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      void send()
-                    }
-                  }}
-                  placeholder="Ответьте на вопрос ассистента…"
-                  rows={2}
-                  disabled={thinking || analyzing}
-                  className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-                />
+            <>
+              {speaking && (
+                <div className="mb-2.5 flex items-center justify-between rounded-[11px] border border-primary/25 bg-primary/5 px-3 py-1.5 text-[12px] font-medium text-primary">
+                  <span className="flex items-center gap-1.5">
+                    <Volume2 className="h-3.5 w-3.5 flex-none animate-pulse motion-reduce:animate-none" />
+                    Ассистент говорит…
+                  </span>
+                  <button
+                    type="button"
+                    onClick={stopSpeaking}
+                    className="rounded-md px-2 py-0.5 font-semibold hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Стоп
+                  </button>
+                </div>
               )}
-              <VoiceRecordButton
-                disabled={thinking || analyzing || submitted}
-                onTranscribingChange={setTranscribing}
-                onRecordingChange={setRecording}
-                onTranscript={(t) => {
-                  // The assistant is mid-reply: sendText() would drop the text
-                  // (its own thinking guard), so hand it to the composer instead.
-                  if (thinking) setInput((v) => (v ? `${v} ${t}` : t))
-                  else void sendText(t)
-                }}
-              />
-              {!recording && (
+              <div className="flex items-end gap-2.5">
+                {!recording && (
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        void send()
+                      }
+                    }}
+                    placeholder="Ответьте на вопрос ассистента…"
+                    rows={2}
+                    disabled={thinking || analyzing}
+                    className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  />
+                )}
                 <button
                   type="button"
-                  onClick={() => void send()}
-                  disabled={!input.trim() || thinking || analyzing}
-                  aria-label="Отправить сообщение"
-                  className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                  onClick={toggleVoiceMode}
+                  aria-pressed={voiceMode}
+                  aria-label={voiceMode ? 'Выключить голосовой режим' : 'Включить голосовой режим'}
+                  title="Голосовой режим: ассистент отвечает голосом, микрофон включается сам. Лучше в наушниках."
+                  className={cn(
+                    'flex h-11 w-11 flex-none items-center justify-center rounded-[11px] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    voiceMode
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-input bg-card text-muted-foreground hover:bg-muted',
+                  )}
                 >
-                  <Send className="h-5 w-5" />
+                  {voiceMode ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
                 </button>
-              )}
-            </div>
+                <VoiceRecordButton
+                  disabled={thinking || analyzing || submitted}
+                  onTranscribingChange={setTranscribing}
+                  onRecordingChange={setRecording}
+                  autoStopOnSilence={voiceMode}
+                  startSignal={listenSignal}
+                  onTranscript={(t) => {
+                    // The assistant is mid-reply: sendText() would drop the text
+                    // (its own thinking guard), so hand it to the composer instead.
+                    if (thinking) {
+                      setInput((v) => (v ? `${v} ${t}` : t))
+                      return
+                    }
+                    void sendText(t).then((reply) => {
+                      if (voiceMode && reply) void speakReply(reply)
+                    })
+                  }}
+                />
+                {!recording && (
+                  <button
+                    type="button"
+                    onClick={() => void send()}
+                    disabled={!input.trim() || thinking || analyzing}
+                    aria-label="Отправить сообщение"
+                    className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                  >
+                    <Send className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
