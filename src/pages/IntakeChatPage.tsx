@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
+  ArrowUp,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -30,26 +31,14 @@ import {
 import { DocumentAttach } from '@/components/DocumentAttach'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { VoiceRecordButton } from '@/components/VoiceRecordButton'
+import { PromptInput, PromptInputActions, PromptInputTextarea } from '@/components/ui/prompt-input'
 
-// The active AI-intake session id is kept in sessionStorage so navigating away
-// and back (or reloading) resumes the same session — the analysis is never
-// lost. finalize() clears it on success.
 export const INTAKE_SESSION_STORAGE_KEY = 'intake:sessionId'
 const VOICE_MODE_STORAGE_KEY = 'intake:voiceMode'
 
-// Module-level singleton: iOS/Safari only allow .play() when it's triggered
-// by (or chained directly off) a user gesture. We "bless" this one element
-// once, in the voice-mode toggle's click handler, and reuse it for every
-// synthesized reply afterward — a fresh Audio() per reply would need its own
-// unlock and silently fail to autoplay.
+
 const sharedAudio: HTMLAudioElement | null = typeof Audio !== 'undefined' ? new Audio() : null
 
-// Play a short *valid* silent clip from inside a user gesture so later
-// programmatic .play() calls (after the async TTS fetch resolves, well outside
-// any gesture) are allowed by the browser autoplay policy. `audioUnlocked`
-// flips true only once the silent play actually succeeds — a still-blocked
-// attempt leaves it false so the next gesture retries. (The old clip had a
-// zero-length data chunk, which some browsers refuse to play → never unlocked.)
 function makeSilentWavUrl(): string {
   // 44-byte WAV header + ~50ms of 16-bit PCM silence, built at runtime so we
   // don't carry a giant base64 literal. A valid non-empty clip matters: the
@@ -127,6 +116,11 @@ const STARTERS: { label: string; seed: string }[] = [
   { label: 'Не знаю, с чего начать', seed: 'Не знаю, с чего начать — помогите оформить заявку по шагам.' },
 ]
 
+// Round primary action at the right end of the composer row; grey while it
+// can't fire (empty draft / assistant busy) so the yellow reads as "ready".
+const SEND_BUTTON_CLASS =
+  'flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:bg-muted disabled:text-muted-foreground'
+
 function errorMessage(err: unknown): string {
   const body = err instanceof ApiError ? (err.body as { error?: { code?: string } } | null) : null
   if (body?.error?.code === 'LLM_UNAVAILABLE') {
@@ -182,6 +176,37 @@ function TranscribingBubble() {
         Расшифровка голосового сообщения…
       </div>
     </div>
+  )
+}
+
+// Voice-mode pill for the composer's action row: icon-only when off, expands
+// to show its label when on — the mode is otherwise invisible until the mic
+// arms itself after a reply.
+function VoiceModeToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      aria-label={on ? 'Выключить голосовой режим' : 'Включить голосовой режим'}
+      title="Голосовой режим: ассистент отвечает голосом, микрофон включается сам. Лучше в наушниках."
+      className={cn(
+        'flex h-9 flex-none items-center rounded-full border px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        on
+          ? 'border-primary bg-primary/15 text-foreground'
+          : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      {on ? <Volume2 className="h-4 w-4 flex-none" /> : <VolumeX className="h-4 w-4 flex-none" />}
+      <span
+        className={cn(
+          'overflow-hidden whitespace-nowrap transition-all duration-200 motion-reduce:transition-none',
+          on ? 'ml-1.5 max-w-[9rem] opacity-100' : 'max-w-0 opacity-0',
+        )}
+      >
+        Голосовой режим
+      </span>
+    </button>
   )
 }
 
@@ -679,8 +704,7 @@ export default function IntakeChatPage() {
       </div>
       {missingRequired.length > 0 ? (
         <div className="mb-3 text-[11px] leading-snug text-muted-foreground">
-          Осталось собрать: {missingRequired.map((f) => f.label).join(', ')}. Нажмите на пункт —
-          подскажу вопрос.
+          Нажмите на незаполненный пункт — подскажу вопрос.
         </div>
       ) : (
         fields.length > 0 && (
@@ -690,16 +714,33 @@ export default function IntakeChatPage() {
           </div>
         )
       )}
-      <div className="flex flex-col gap-1.5">
-        {fields.map((f) => {
+      {/* Field checklist as a vertical tracker: the connector line between
+          items makes the collected run readable at a glance. Completed keeps
+          the page's success green (the yellow primary is too pale for a 20px
+          icon on the white card). */}
+      <div className="flex flex-col">
+        {fields.map((f, i) => {
+          const last = i === fields.length - 1
           const inner = (
             <>
-              {f.missing ? (
-                <Circle className="mt-0.5 h-4 w-4 flex-none text-muted-foreground/40" />
-              ) : (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-success" />
-              )}
-              <div className="min-w-0">
+              <div className="flex flex-col items-center">
+                {f.missing ? (
+                  <Circle className="h-5 w-5 flex-none text-muted-foreground/40" />
+                ) : (
+                  <CheckCircle2 className="h-5 w-5 flex-none text-success" />
+                )}
+                {!last && (
+                  <div
+                    className={cn(
+                      // min-h floor: the line's height comes from the row
+                      // stretching, which is less reliable inside a <button>.
+                      'w-[1.5px] grow min-h-2',
+                      fields[i + 1].missing ? 'bg-border' : 'bg-success/40',
+                    )}
+                  />
+                )}
+              </div>
+              <div className={cn('ml-2.5 min-w-0 flex-1', !last && 'pb-3.5')}>
                 <div className="text-[12px] font-semibold leading-tight">
                   {f.label}
                   {f.required && <span className="text-destructive"> *</span>}
@@ -723,12 +764,12 @@ export default function IntakeChatPage() {
               key={f.key}
               type="button"
               onClick={() => nudgeField(f.label)}
-              className="-m-1 flex gap-2.5 rounded-lg p-1 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full rounded-lg text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {inner}
             </button>
           ) : (
-            <div key={f.key} className="flex gap-2.5 p-1">
+            <div key={f.key} className="flex">
               {inner}
             </div>
           )
@@ -825,7 +866,7 @@ export default function IntakeChatPage() {
           {starting && <TypingBubble label="Начинаю диалог…" />}
           {transcribing && <TranscribingBubble />}
         </div>
-        <div className="space-y-3 rounded-b-2xl border-t border-border bg-card p-3.5">
+        <div className="space-y-3 p-3.5">
           {/* Attach documents (optional) */}
           <DocumentAttach
             selectedIds={pendingDocIds}
@@ -833,73 +874,57 @@ export default function IntakeChatPage() {
             disabled={starting}
           />
           {/* Composer */}
-          <div className="flex items-end gap-2.5">
+          <PromptInput>
             {!recording && (
-              <textarea
+              <PromptInputTextarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void send()
-                  }
-                }}
+                onSubmit={() => void send()}
                 placeholder="Опишите проблему или задачу…"
-                rows={2}
                 disabled={starting}
-                className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               />
             )}
-            <button
-              type="button"
-              onClick={toggleVoiceMode}
-              aria-pressed={voiceMode}
-              aria-label={voiceMode ? 'Выключить голосовой режим' : 'Включить голосовой режим'}
-              title="Голосовой режим: ассистент отвечает голосом, микрофон включается сам. Лучше в наушниках."
-              className={cn(
-                'flex h-11 w-11 flex-none items-center justify-center rounded-[11px] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                voiceMode
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-input bg-card text-muted-foreground hover:bg-muted',
-              )}
-            >
-              {voiceMode ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-            </button>
-            <VoiceRecordButton
-              disabled={starting}
-              onTranscribingChange={setTranscribing}
-              onRecordingChange={setRecording}
-              autoStopOnSilence={voiceMode}
-              startSignal={listenSignal}
-              onTranscript={(t) => {
-                // Documents still need "Начать" to be pressed explicitly (a
-                // turn can't be sent while they're being analysed) — seed the
-                // composer instead of auto-sending in that case.
-                if (pendingDocIds.length > 0) {
-                  seedComposer(input ? `${input} ${t}` : t)
-                  return
-                }
-                // In voice mode this first turn creates the session; once it
-                // returns the assistant's reply we speak it, and speakReply's
-                // re-arm continues the loop in the now-active composer.
-                void startAndMaybeSend(t).then((reply) => {
-                  if (voiceMode && reply) void speakReply(reply)
-                })
-              }}
-            />
-            {!recording && (
-              <button
-                type="button"
-                onClick={() => void send()}
-                disabled={!canStart}
-                aria-label="Начать диалог"
-                className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              >
-                {starting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-              </button>
-            )}
-          </div>
+            <PromptInputActions>
+              {!recording && <VoiceModeToggle on={voiceMode} onToggle={toggleVoiceMode} />}
+              {/* While recording the mic grows into its strip and takes this whole row. */}
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+                <VoiceRecordButton
+                  disabled={starting}
+                  onTranscribingChange={setTranscribing}
+                  onRecordingChange={setRecording}
+                  autoStopOnSilence={voiceMode}
+                  startSignal={listenSignal}
+                  onTranscript={(t) => {
+                    // Documents still need "Начать" to be pressed explicitly (a
+                    // turn can't be sent while they're being analysed) — seed the
+                    // composer instead of auto-sending in that case.
+                    if (pendingDocIds.length > 0) {
+                      seedComposer(input ? `${input} ${t}` : t)
+                      return
+                    }
+                    // In voice mode this first turn creates the session; once it
+                    // returns the assistant's reply we speak it, and speakReply's
+                    // re-arm continues the loop in the now-active composer.
+                    void startAndMaybeSend(t).then((reply) => {
+                      if (voiceMode && reply) void speakReply(reply)
+                    })
+                  }}
+                />
+                {!recording && (
+                  <button
+                    type="button"
+                    onClick={() => void send()}
+                    disabled={!canStart}
+                    aria-label="Начать диалог"
+                    className={SEND_BUTTON_CLASS}
+                  >
+                    {starting ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+                  </button>
+                )}
+              </div>
+            </PromptInputActions>
+          </PromptInput>
           {pendingDocIds.length > 0 && (
             <div className="text-[11.5px] text-muted-foreground">
               К заявке приложено документов: {pendingDocIds.length}. Нажмите «Начать», и ассистент
@@ -982,7 +1007,7 @@ export default function IntakeChatPage() {
           {thinking && <TypingBubble label="Ассистент печатает…" />}
           {transcribing && <TranscribingBubble />}
         </div>
-        <div className="border-t border-border bg-card p-3.5 rounded-b-2xl">
+        <div className="p-3.5">
           {submitted ? (
             <div className="flex items-center justify-center gap-2 py-2 text-[13px] font-medium text-success">
               <CheckCircle2 className="h-[18px] w-[18px]" />
@@ -1005,69 +1030,53 @@ export default function IntakeChatPage() {
                   </button>
                 </div>
               )}
-              <div className="flex items-end gap-2.5">
+              <PromptInput>
                 {!recording && (
-                  <textarea
+                  <PromptInputTextarea
                     ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        void send()
-                      }
-                    }}
+                    onSubmit={() => void send()}
                     placeholder="Ответьте на вопрос ассистента…"
-                    rows={2}
                     disabled={thinking || analyzing}
-                    className="max-h-40 flex-1 resize-none rounded-[11px] border border-input bg-card px-[13px] py-[10px] text-base leading-relaxed sm:text-[13.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                   />
                 )}
-                <button
-                  type="button"
-                  onClick={toggleVoiceMode}
-                  aria-pressed={voiceMode}
-                  aria-label={voiceMode ? 'Выключить голосовой режим' : 'Включить голосовой режим'}
-                  title="Голосовой режим: ассистент отвечает голосом, микрофон включается сам. Лучше в наушниках."
-                  className={cn(
-                    'flex h-11 w-11 flex-none items-center justify-center rounded-[11px] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    voiceMode
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-input bg-card text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {voiceMode ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-                </button>
-                <VoiceRecordButton
-                  disabled={thinking || analyzing || submitted}
-                  onTranscribingChange={setTranscribing}
-                  onRecordingChange={setRecording}
-                  autoStopOnSilence={voiceMode}
-                  startSignal={listenSignal}
-                  onTranscript={(t) => {
-                    // The assistant is mid-reply: sendText() would drop the text
-                    // (its own thinking guard), so hand it to the composer instead.
-                    if (thinking) {
-                      setInput((v) => (v ? `${v} ${t}` : t))
-                      return
-                    }
-                    void sendText(t).then((reply) => {
-                      if (voiceMode && reply) void speakReply(reply)
-                    })
-                  }}
-                />
-                {!recording && (
-                  <button
-                    type="button"
-                    onClick={() => void send()}
-                    disabled={!input.trim() || thinking || analyzing}
-                    aria-label="Отправить сообщение"
-                    className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-                  >
-                    <Send className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
+                <PromptInputActions>
+                  {!recording && <VoiceModeToggle on={voiceMode} onToggle={toggleVoiceMode} />}
+                  {/* While recording the mic grows into its strip and takes this whole row. */}
+                  <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+                    <VoiceRecordButton
+                      disabled={thinking || analyzing || submitted}
+                      onTranscribingChange={setTranscribing}
+                      onRecordingChange={setRecording}
+                      autoStopOnSilence={voiceMode}
+                      startSignal={listenSignal}
+                      onTranscript={(t) => {
+                        // The assistant is mid-reply: sendText() would drop the text
+                        // (its own thinking guard), so hand it to the composer instead.
+                        if (thinking) {
+                          setInput((v) => (v ? `${v} ${t}` : t))
+                          return
+                        }
+                        void sendText(t).then((reply) => {
+                          if (voiceMode && reply) void speakReply(reply)
+                        })
+                      }}
+                    />
+                    {!recording && (
+                      <button
+                        type="button"
+                        onClick={() => void send()}
+                        disabled={!input.trim() || thinking || analyzing}
+                        aria-label="Отправить сообщение"
+                        className={SEND_BUTTON_CLASS}
+                      >
+                        {thinking ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+                      </button>
+                    )}
+                  </div>
+                </PromptInputActions>
+              </PromptInput>
             </>
           )}
         </div>
