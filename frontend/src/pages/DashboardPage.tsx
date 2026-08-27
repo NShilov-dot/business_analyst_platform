@@ -1,6 +1,6 @@
 import {
+  ArrowUpRight,
   BadgeCheck,
-  Calendar,
   Circle,
   Clock,
   FileText,
@@ -10,6 +10,7 @@ import {
   GitMerge,
   ListChecks,
   PlayCircle,
+  RefreshCw,
   Send,
   ShieldCheck,
   Shuffle,
@@ -20,8 +21,10 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import { STATUS_META, WORKFLOW_ORDER, type TicketStatus } from '@/features/tickets/model'
 import { ruDateTime, shortSubject } from '@/features/tickets/format'
 import { ticketsApi } from '@/api/tickets'
@@ -206,6 +209,8 @@ function FlowChart({ points }: { points: { week_start: string; created: number; 
 
   const n = points.length
   const maxVal = Math.max(1, ...points.map((p) => p.created), ...points.map((p) => p.closed))
+  const sumCreated = points.reduce((s, p) => s + p.created, 0)
+  const sumClosed = points.reduce((s, p) => s + p.closed, 0)
 
   // Map a value to SVG y coordinate (0 at bottom)
   const toY = (v: number) => PAD_TOP + innerH - (v / maxVal) * innerH
@@ -241,23 +246,26 @@ function FlowChart({ points }: { points: { week_start: string; created: number; 
 
   return (
     <div className="mt-4">
-      {/* Legend */}
+      {/* Legend — with period totals so the values are readable without a tooltip */}
       <div className="mb-2 flex items-center gap-4 text-[12px]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-[#6366F1]" />
           <span className="text-muted-foreground">Создано</span>
+          <span className="font-semibold tabular-nums">{sumCreated}</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-[#16A34A]" />
           <span className="text-muted-foreground">Закрыто</span>
+          <span className="font-semibold tabular-nums">{sumClosed}</span>
         </span>
       </div>
 
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full"
+        className="h-[120px] w-full"
         preserveAspectRatio="none"
-        aria-hidden="true"
+        role="img"
+        aria-label={`Поток заявок за ${n} недель: всего создано ${sumCreated}, закрыто ${sumClosed}.`}
       >
         <defs>
           <linearGradient id={gradCreatedId} x1="0" y1="0" x2="0" y2="1">
@@ -348,11 +356,60 @@ function FlowChart({ points }: { points: { week_start: string; created: number; 
 }
 
 // ---------------------------------------------------------------------------
+// KPI card — clickable, drills down to the board (Nielsen #3 user control,
+// #6 recognition over recall). Extracted so all four stay consistent (#4).
+// ---------------------------------------------------------------------------
+function KpiCard({
+  icon: Icon,
+  value,
+  label,
+  hint,
+  iconClass,
+  onClick,
+  title,
+}: {
+  icon: LucideIcon
+  value: number
+  label: string
+  hint: string
+  iconClass?: string
+  onClick: () => void
+  title: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="group rounded-2xl border border-border bg-card p-[18px] text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="mb-3.5 flex items-center justify-between">
+        <div
+          className={cn(
+            'flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted',
+            iconClass,
+          )}
+        >
+          <Icon className="h-[19px] w-[19px]" />
+        </div>
+        <ArrowUpRight className="h-4 w-4 text-transparent transition-colors group-hover:text-muted-foreground" />
+      </div>
+      <div className="text-[27px] font-bold leading-none tracking-tight tabular-nums">{value}</div>
+      <div className="mt-1.5 text-[12.5px] font-medium leading-tight">{label}</div>
+      <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div>
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
+
+  // Flow-chart period (Nielsen #7 flexibility) — drives the analytics query.
+  const [weeks, setWeeks] = useState(24)
 
   // Primary data: all tickets (up to 100) for status counts
   const ticketsQ = useQuery({
@@ -362,8 +419,8 @@ export default function DashboardPage() {
 
   // Analytics: ticket flow chart
   const flowQ = useQuery({
-    queryKey: ['analytics', 'flow'],
-    queryFn: () => analyticsApi.ticketFlow(24),
+    queryKey: ['analytics', 'flow', weeks],
+    queryFn: () => analyticsApi.ticketFlow(weeks),
   })
 
   // Analytics: activity feed
@@ -371,6 +428,19 @@ export default function DashboardPage() {
     queryKey: ['analytics', 'activity'],
     queryFn: () => analyticsApi.activity(8),
   })
+
+  // Freshness + manual refresh (Nielsen #1 visibility of system status).
+  const refreshing = ticketsQ.isFetching || flowQ.isFetching || actQ.isFetching
+  const lastUpdated = Math.max(ticketsQ.dataUpdatedAt, flowQ.dataUpdatedAt, actQ.dataUpdatedAt)
+  const refreshAll = () => {
+    void ticketsQ.refetch()
+    void flowQ.refetch()
+    void actQ.refetch()
+  }
+
+  // Drill-down: jump to the board, optionally focused on one status.
+  const goBoard = (status?: TicketStatus) =>
+    navigate(status ? `/board?status=${status}` : '/board')
 
   const tickets = ticketsQ.data?.data ?? []
   const flowPoints = flowQ.data?.data.points ?? []
@@ -453,14 +523,41 @@ export default function DashboardPage() {
             Портфель заявок и последние события.
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/intake')}
-          className="inline-flex flex-none items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Sparkles className="h-4 w-4" />
-          <span className="hidden sm:inline">Создать&nbsp;</span>заявку
-        </button>
+        <div className="flex flex-none items-center gap-2">
+          <button
+            type="button"
+            onClick={refreshAll}
+            disabled={refreshing}
+            aria-label="Обновить данные дашборда"
+            title={
+              lastUpdated
+                ? `Обновлено в ${new Date(lastUpdated).toLocaleTimeString('ru-RU', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })} — нажмите, чтобы обновить`
+                : 'Обновить данные'
+            }
+            className="inline-flex items-center gap-1.5 rounded-xl border border-input bg-card px-3 py-2.5 text-[12px] font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          >
+            <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+            <span className="hidden tabular-nums sm:inline">
+              {lastUpdated
+                ? new Date(lastUpdated).toLocaleTimeString('ru-RU', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '—'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/intake')}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span className="hidden sm:inline">Создать&nbsp;</span>заявку
+          </button>
+        </div>
       </div>
 
       {total === 0 && (
@@ -483,60 +580,47 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* KPI row — 4 cards, all derived from real data */}
+      {/* KPI row — 4 cards, all derived from real data; each drills into the board */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {/* 1. Total tickets */}
-        <div className="rounded-2xl border border-border bg-card p-[18px]">
-          <div className="mb-3.5 flex items-center justify-between">
-            <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
-              <FileText className="h-[19px] w-[19px]" />
-            </div>
-          </div>
-          <div className="text-[27px] font-bold leading-none tracking-tight">{total}</div>
-          <div className="mt-1.5 text-[12.5px] font-medium leading-tight">Всего заявок</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">в системе</div>
-        </div>
-
-        {/* 2. Active (non-terminal) */}
-        <div className="rounded-2xl border border-border bg-card p-[18px]">
-          <div className="mb-3.5 flex items-center justify-between">
-            <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
-              <Clock className="h-[19px] w-[19px]" />
-            </div>
-          </div>
-          <div className="text-[27px] font-bold leading-none tracking-tight">{activeCount}</div>
-          <div className="mt-1.5 text-[12.5px] font-medium leading-tight">В работе</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">все незакрытые статусы</div>
-        </div>
-
-        {/* 3. Closed */}
-        <div className="rounded-2xl border border-border bg-card p-[18px]">
-          <div className="mb-3.5 flex items-center justify-between">
-            <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
-              <BadgeCheck className="h-[19px] w-[19px]" />
-            </div>
-          </div>
-          <div className="text-[27px] font-bold leading-none tracking-tight">{counts.closed}</div>
-          <div className="mt-1.5 text-[12.5px] font-medium leading-tight">Закрыто</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">завершены успешно</div>
-        </div>
-
-        {/* 4. Rejected */}
-        <div className="rounded-2xl border border-border bg-card p-[18px]">
-          <div className="mb-3.5 flex items-center justify-between">
-            <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-muted">
-              <ListChecks className="h-[19px] w-[19px]" />
-            </div>
-          </div>
-          <div className="text-[27px] font-bold leading-none tracking-tight">{counts.rejected}</div>
-          <div className="mt-1.5 text-[12.5px] font-medium leading-tight">Отклонено</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">дубли / нецелесообразные</div>
-        </div>
+        <KpiCard
+          icon={FileText}
+          value={total}
+          label="Всего заявок"
+          hint="в системе"
+          onClick={() => goBoard()}
+          title="Открыть доску заявок"
+        />
+        <KpiCard
+          icon={Clock}
+          value={activeCount}
+          label="В работе"
+          hint="все незакрытые статусы"
+          onClick={() => goBoard()}
+          title="Открыть доску заявок"
+        />
+        <KpiCard
+          icon={BadgeCheck}
+          value={counts.closed}
+          label="Закрыто"
+          hint="завершены успешно"
+          iconClass="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400"
+          onClick={() => goBoard('closed')}
+          title="Показать закрытые на доске"
+        />
+        <KpiCard
+          icon={ListChecks}
+          value={counts.rejected}
+          label="Отклонено"
+          hint="дубли / нецелесообразные"
+          iconClass="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+          onClick={() => goBoard('rejected')}
+          title="Показать отклонённые на доске"
+        />
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr]">
+      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] lg:items-start">
         {/* Flow chart — REAL data from /v1/analytics/ticket-flow */}
-        <div className="rounded-2xl border border-border bg-card px-[22px] py-5">
+        <div className="rounded-2xl border border-border bg-card px-[22px] py-4">
           <div className="mb-2 flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -546,18 +630,36 @@ export default function DashboardPage() {
                 Создано против закрыто по неделям.
               </div>
             </div>
-            <div className="hidden items-center gap-1.5 rounded-[9px] border border-border px-[11px] py-[7px] text-[12.5px] font-medium sm:flex">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              Еженедельно
+            <div
+              role="group"
+              aria-label="Период потока заявок"
+              className="flex flex-none items-center gap-0.5 rounded-[9px] border border-border p-0.5 text-[12px] font-medium"
+            >
+              {([12, 24, 52] as const).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setWeeks(w)}
+                  aria-pressed={weeks === w}
+                  className={cn(
+                    'rounded-[7px] px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    weeks === w
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  {w}&nbsp;нед.
+                </button>
+              ))}
             </div>
           </div>
 
           {flowQ.isLoading ? (
-            <div className="mt-4 flex min-h-[152px] animate-pulse items-center justify-center rounded-xl bg-muted/30">
+            <div className="mt-4 flex min-h-[120px] animate-pulse items-center justify-center rounded-xl bg-muted/30">
               <div className="h-3 w-24 rounded bg-muted" />
             </div>
           ) : flowQ.isError ? (
-            <div className="mt-4 flex min-h-[152px] flex-col items-center justify-center gap-2 rounded-xl bg-muted/30 text-center">
+            <div className="mt-4 flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-xl bg-muted/30 text-center">
               <XCircle className="h-6 w-6 text-destructive" />
               <p className="text-[12.5px] text-muted-foreground">Не удалось загрузить поток заявок</p>
               <button
@@ -574,14 +676,14 @@ export default function DashboardPage() {
         </div>
 
         {/* Status donut — REAL data */}
-        <div className="rounded-2xl border border-border bg-card px-[22px] py-5">
+        <div className="rounded-2xl border border-border bg-card px-[22px] py-4">
           <div className="text-[15px] font-semibold">Распределение по статусам</div>
           <div className="mb-1.5 mt-0.5 text-[12.5px] text-muted-foreground">
             Живой срез портфеля заявок.
           </div>
           <div className="flex items-center gap-[18px]">
             <div className="relative flex-none">
-              <svg viewBox="0 0 140 140" className="h-[132px] w-[132px]">
+              <svg viewBox="0 0 140 140" className="h-[112px] w-[112px]">
                 <circle
                   cx="70"
                   cy="70"
@@ -606,8 +708,8 @@ export default function DashboardPage() {
                 ))}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="text-[22px] font-bold leading-none">{total}</div>
-                <div className="text-[10.5px] text-muted-foreground">заявок</div>
+                <div className="text-[19px] font-bold leading-none">{total}</div>
+                <div className="text-[10px] text-muted-foreground">заявок</div>
               </div>
             </div>
             <div className="flex flex-1 flex-col gap-[7px]">
@@ -615,14 +717,20 @@ export default function DashboardPage() {
                 <p className="text-[12px] text-muted-foreground">Нет заявок</p>
               ) : (
                 presentWithRejected.map((k) => (
-                  <div key={k} className="flex items-center gap-2 text-xs">
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => goBoard(k)}
+                    title={`Показать «${STATUS_META[k].label}» на доске`}
+                    className="flex items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     <span
                       className="h-[9px] w-[9px] flex-none rounded-[3px]"
                       style={{ background: STATUS_META[k].color }}
                     />
                     <span className="flex-1 text-muted-foreground">{STATUS_META[k].label}</span>
-                    <span className="font-semibold">{counts[k]}</span>
-                  </div>
+                    <span className="font-semibold tabular-nums">{counts[k]}</span>
+                  </button>
                 ))
               )}
             </div>
@@ -630,19 +738,25 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr] lg:items-start">
         {/* Lifecycle funnel — REAL data */}
-        <div className="rounded-2xl border border-border bg-card px-[22px] py-5">
+        <div className="rounded-2xl border border-border bg-card px-[22px] py-4">
           <div className="mb-0.5 text-[15px] font-semibold">Воронка жизненного цикла</div>
           <div className="mb-4 text-[12.5px] text-muted-foreground">
             Сколько заявок на каждом статусе прямо сейчас.
           </div>
-          <div className="flex flex-col gap-[13px]">
+          <div className="flex flex-col gap-2">
             {WORKFLOW_ORDER.map((k) => (
-              <div key={k} className="flex items-center gap-3">
-                <div className="flex w-[110px] flex-none items-center gap-2 text-[12.5px] font-medium sm:w-[150px]">
+              <button
+                key={k}
+                type="button"
+                onClick={() => goBoard(k)}
+                title={`Показать «${STATUS_META[k].label}» на доске`}
+                className="flex w-full items-center gap-3 rounded-md px-1 py-0.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <div className="flex w-[110px] flex-none items-center gap-2 text-left text-[12.5px] font-medium sm:w-[150px]">
                   <span
-                    className="h-[9px] w-[9px] rounded-[3px]"
+                    className="h-[9px] w-[9px] flex-none rounded-[3px]"
                     style={{ background: STATUS_META[k].color }}
                   />
                   {STATUS_META[k].label}
@@ -656,15 +770,22 @@ export default function DashboardPage() {
                     }}
                   />
                 </div>
-                <div className="w-[26px] text-right text-[13px] font-semibold">{counts[k]}</div>
-              </div>
+                <div className="w-[26px] flex-none text-right text-[13px] font-semibold tabular-nums">
+                  {counts[k]}
+                </div>
+              </button>
             ))}
             {/* Rejected shown separately as a terminal branch */}
             {counts.rejected > 0 && (
-              <div className="flex items-center gap-3 opacity-70">
-                <div className="flex w-[110px] flex-none items-center gap-2 text-[12.5px] font-medium sm:w-[150px]">
+              <button
+                type="button"
+                onClick={() => goBoard('rejected')}
+                title={`Показать «${STATUS_META.rejected.label}» на доске`}
+                className="flex w-full items-center gap-3 rounded-md px-1 py-0.5 opacity-70 transition-colors hover:bg-muted/50 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <div className="flex w-[110px] flex-none items-center gap-2 text-left text-[12.5px] font-medium sm:w-[150px]">
                   <span
-                    className="h-[9px] w-[9px] rounded-[3px]"
+                    className="h-[9px] w-[9px] flex-none rounded-[3px]"
                     style={{ background: STATUS_META.rejected.color }}
                   />
                   {STATUS_META.rejected.label}
@@ -678,14 +799,16 @@ export default function DashboardPage() {
                     }}
                   />
                 </div>
-                <div className="w-[26px] text-right text-[13px] font-semibold">{counts.rejected}</div>
-              </div>
+                <div className="w-[26px] flex-none text-right text-[13px] font-semibold tabular-nums">
+                  {counts.rejected}
+                </div>
+              </button>
             )}
           </div>
         </div>
 
         {/* Activity feed — REAL data from /v1/analytics/activity */}
-        <div className="rounded-2xl border border-border bg-card px-[22px] py-5">
+        <div className="rounded-2xl border border-border bg-card px-[22px] py-4">
           <div className="mb-0.5 text-[15px] font-semibold">Последние события</div>
           <div className="mb-3 text-[12.5px] text-muted-foreground">Аудит-лог по тикетам.</div>
 

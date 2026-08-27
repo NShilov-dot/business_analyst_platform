@@ -27,7 +27,7 @@ endif
         up down restart build logs ps clean config \
         prod-up prod-down prod-restart prod-build prod-logs prod-ps prod-migrate \
         migrate seed-demo revision new-module psql redis-cli backend-shell \
-        test lint fmt typecheck check ci fe-install fe-build fe-check fe-dev dev-backend
+        test lint fmt typecheck check ci fe-install fe-build fe-check fe-dev fe-rebuild dev-backend
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -184,6 +184,11 @@ fe-check: ## Type-check the frontend without emitting (tsc --noEmit)
 
 fe-dev: ## Run the Vite dev server
 	cd frontend && npm run dev
+
+fe-rebuild: ## Rebuild & restart ONLY the frontend container  (ENV=dev|prod)
+	# --no-deps: without it, `frontend`'s depends_on drags `app` into the
+	# rebuild+recreate too, bouncing the backend for a pure SPA change.
+	$(COMPOSE) up -d --build --no-deps frontend
 
 # --------------------------------------------------------------------------
 # Local (non-docker) backend dev — loads ./.env, talks to docker-exposed ports

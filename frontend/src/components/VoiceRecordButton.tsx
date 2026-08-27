@@ -389,7 +389,7 @@ export function VoiceRecordButton({
   if (state === 'recording') {
     const nearCap = elapsed >= MAX_RECORDING_MS / 1000 - CAP_WARN_S
     return (
-      <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[11px] border border-input bg-card pl-3 pr-1">
+      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 pl-2">
         <span
           aria-hidden="true"
           className="h-2 w-2 flex-none animate-pulse rounded-full bg-destructive motion-reduce:animate-none"
@@ -409,7 +409,7 @@ export function VoiceRecordButton({
           onClick={cancelRecording}
           aria-label="Отменить запись"
           title="Отменить запись (Esc)"
-          className="flex h-9 w-9 flex-none items-center justify-center rounded-[9px] text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="h-5 w-5" />
         </button>
@@ -419,7 +419,7 @@ export function VoiceRecordButton({
           onClick={stopRecording}
           aria-label="Остановить запись и распознать"
           title="Готово — распознать"
-          className="flex h-9 w-9 flex-none items-center justify-center rounded-[9px] bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Check className="h-5 w-5" />
         </button>
@@ -433,7 +433,7 @@ export function VoiceRecordButton({
       onClick={() => void startRecording()}
       disabled={disabled || state === 'transcribing'}
       aria-label={state === 'transcribing' ? 'Распознавание речи…' : 'Записать голосовое сообщение'}
-      className="flex h-11 w-11 flex-none items-center justify-center rounded-[11px] border border-input bg-card text-muted-foreground hover:bg-muted disabled:opacity-40"
+      className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
     >
       {state === 'transcribing' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mic className="h-5 w-5" />}
     </button>
