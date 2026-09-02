@@ -1,0 +1,10 @@
+{
+  "date": "2026-08-24",
+  "framework": "React 18 + Vite 5 (SPA, react-router v6)",
+  "fonts": "Golos Text (sans, 400-700 variable, self-hosted woff2, cyrillic subsets) + JetBrains Mono (mono, 500-600), frontend/src/index.css @font-face; tailwind.config.js fontFamily",
+  "palette": "shadcn-style HSL custom properties (--background/--primary/--accent/... in index.css :root), darkMode class via next-themes",
+  "motion": "motion-cut — no framer-motion/gsap; tailwindcss-animate only",
+  "spacing": "Tailwind default scale (no extend.spacing)",
+  "ui_kit": "Radix primitives + cva + tailwind-merge (shadcn pattern), lucide-react icons, sonner toasts",
+  "design_md": false
+}
