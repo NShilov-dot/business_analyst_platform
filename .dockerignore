@@ -6,3 +6,7 @@ dist/
 npm-debug.log*
 .vite/
 .git/
+docker-compose.yml
+CLAUDE.md
+README.md
+.hallmark/
