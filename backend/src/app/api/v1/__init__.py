@@ -8,6 +8,7 @@ from app.modules.departments.interface.router import router as departments_route
 from app.modules.directory.interface.router import router as directory_router
 from app.modules.documents.interface.router import router as documents_router
 from app.modules.intake_templates.interface.router import router as templates_router
+from app.modules.notifications.interface.router import router as notifications_router
 from app.modules.tasks.interface.router import router as tasks_router
 from app.modules.tenants.interface.router import router as admin_router
 from app.modules.tickets.interface.router import router as tickets_router
@@ -26,3 +27,4 @@ router.include_router(intake_chat_router)
 router.include_router(analytics_router)
 router.include_router(directory_router)
 router.include_router(documents_router)
+router.include_router(notifications_router)

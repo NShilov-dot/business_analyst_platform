@@ -1,8 +1,9 @@
 import { type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Bell, Plus, Search } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import { SidebarProvider, SidebarTrigger } from './sidebar-context'
 import { AppSidebar } from './AppSidebar'
+import { NotificationsBell } from './NotificationsBell'
 import { Toaster } from '@/components/ui/sonner'
 import { useAuth } from '../../auth/AuthProvider'
 import { displayName, primaryRoleLabel, userInitials } from '@/lib/user'
@@ -26,9 +27,6 @@ function IconButton({ icon: Icon, label }: { icon: typeof Search; label: string 
       className="relative hidden h-10 w-10 items-center justify-center rounded-[11px] border border-border bg-card hover:bg-muted md:flex"
     >
       <Icon className="h-5 w-5" />
-      {label === 'Уведомления' && (
-        <span className="absolute right-2.5 top-2 h-[7px] w-[7px] rounded-full bg-destructive" />
-      )}
     </button>
   )
 }
@@ -68,7 +66,7 @@ function Header() {
           <span className="hidden sm:inline">Новая заявка</span>
         </button>
         <IconButton icon={Search} label="Поиск" />
-        <IconButton icon={Bell} label="Уведомления" />
+        <NotificationsBell />
         <div className="flex items-center gap-[9px] sm:pl-1.5">
           <div className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-full bg-foreground text-[13px] font-bold text-primary">
             {initials}

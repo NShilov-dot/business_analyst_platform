@@ -43,3 +43,6 @@ Thumbs.db
 
 # --- Claude Code local ---
 .claude/settings.local.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
