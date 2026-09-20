@@ -1,4 +1,4 @@
-"""Endpoint tests for /v1/audit.
+"""Endpoint tests for /api/v1/audit.
 
 Covers:
 - RBAC: tenant_admin and platform_admin can access; tenant_user cannot (403).
@@ -99,7 +99,7 @@ async def _make_client(
 
 async def test_list_audit_tenant_admin_ok() -> None:
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit")
+        r = await ac.get("/api/v1/audit")
         assert r.status_code == 200, r.text
         body = r.json()
         assert len(body["data"]) == 1
@@ -111,19 +111,19 @@ async def test_list_audit_tenant_admin_ok() -> None:
 
 async def test_list_audit_platform_admin_ok() -> None:
     async for ac, _ in _make_client("platform_admin"):
-        r = await ac.get("/v1/audit")
+        r = await ac.get("/api/v1/audit")
         assert r.status_code == 200, r.text
 
 
 async def test_list_audit_tenant_user_forbidden() -> None:
     async for ac, _ in _make_client("tenant_user"):
-        r = await ac.get("/v1/audit")
+        r = await ac.get("/api/v1/audit")
         assert r.status_code == 403
 
 
 async def test_list_audit_no_roles_forbidden() -> None:
     async for ac, _ in _make_client():
-        r = await ac.get("/v1/audit")
+        r = await ac.get("/api/v1/audit")
         assert r.status_code == 403
 
 
@@ -134,7 +134,7 @@ async def test_list_audit_no_roles_forbidden() -> None:
 
 async def test_list_audit_response_shape() -> None:
     async for ac, _ in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit")
+        r = await ac.get("/api/v1/audit")
         assert r.status_code == 200
         body = r.json()
         entry = body["data"][0]
@@ -159,7 +159,7 @@ async def test_list_audit_forwards_entity_type_filter() -> None:
     from app.modules.audit.application.dtos import ListAuditEntriesQuery
 
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit", params={"entity_type": "department"})
+        r = await ac.get("/api/v1/audit", params={"entity_type": "department"})
         assert r.status_code == 200
         q: ListAuditEntriesQuery = fake.last_query  # type: ignore[assignment]
         assert q.entity_type == "department"
@@ -170,7 +170,7 @@ async def test_list_audit_forwards_entity_id_filter() -> None:
 
     entity_id = uuid4()
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit", params={"entity_id": str(entity_id)})
+        r = await ac.get("/api/v1/audit", params={"entity_id": str(entity_id)})
         assert r.status_code == 200
         q: ListAuditEntriesQuery = fake.last_query  # type: ignore[assignment]
         assert q.entity_id == entity_id
@@ -180,7 +180,7 @@ async def test_list_audit_forwards_action_filter() -> None:
     from app.modules.audit.application.dtos import ListAuditEntriesQuery
 
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit", params={"action": "updated"})
+        r = await ac.get("/api/v1/audit", params={"action": "updated"})
         assert r.status_code == 200
         q: ListAuditEntriesQuery = fake.last_query  # type: ignore[assignment]
         assert q.action == "updated"
@@ -190,7 +190,7 @@ async def test_list_audit_forwards_actor_filter() -> None:
     from app.modules.audit.application.dtos import ListAuditEntriesQuery
 
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit", params={"actor": "user-sub-001"})
+        r = await ac.get("/api/v1/audit", params={"actor": "user-sub-001"})
         assert r.status_code == 200
         q: ListAuditEntriesQuery = fake.last_query  # type: ignore[assignment]
         assert q.actor == "user-sub-001"
@@ -205,7 +205,7 @@ async def test_list_audit_forwards_paging() -> None:
     from app.modules.audit.application.dtos import ListAuditEntriesQuery
 
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit", params={"limit": 5, "offset": 10})
+        r = await ac.get("/api/v1/audit", params={"limit": 5, "offset": 10})
         assert r.status_code == 200
         q: ListAuditEntriesQuery = fake.last_query  # type: ignore[assignment]
         assert q.limit == 5
@@ -214,13 +214,13 @@ async def test_list_audit_forwards_paging() -> None:
 
 async def test_list_audit_limit_too_large_rejected() -> None:
     async for ac, _ in _make_client("tenant_admin"):
-        r = await ac.get("/v1/audit", params={"limit": 200})
+        r = await ac.get("/api/v1/audit", params={"limit": 200})
         assert r.status_code == 422
 
 
 async def test_list_audit_empty_result() -> None:
     async for ac, _ in _make_client("tenant_admin", entries=[]):
-        r = await ac.get("/v1/audit")
+        r = await ac.get("/api/v1/audit")
         assert r.status_code == 200
         body = r.json()
         assert body["data"] == []

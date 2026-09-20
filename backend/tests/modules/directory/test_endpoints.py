@@ -1,4 +1,4 @@
-"""Endpoint tests for /v1/directory/users.
+"""Endpoint tests for /api/v1/directory/users.
 
 Covers:
 - Tenant isolation: the Keycloak query is scoped by the verified principal's
@@ -86,7 +86,7 @@ async def _make_client(
 async def test_directory_happy_path_maps_and_excludes_service_accounts() -> None:
     kc = _FakeKc()
     async for ac, _ in _make_client(kc=kc):
-        r = await ac.get("/v1/directory/users")
+        r = await ac.get("/api/v1/directory/users")
         assert r.status_code == 200, r.text
         data = r.json()["data"]
         assert len(data) == 1  # service account filtered out
@@ -100,7 +100,7 @@ async def test_directory_happy_path_maps_and_excludes_service_accounts() -> None
 async def test_directory_scopes_query_to_caller_tenant() -> None:
     kc = _FakeKc()
     async for ac, fake in _make_client(kc=kc):
-        await ac.get("/v1/directory/users", params={"q": "tim", "limit": 25})
+        await ac.get("/api/v1/directory/users", params={"q": "tim", "limit": 25})
         assert fake is not None
         assert fake.calls, "search_users was not called"
         call = fake.calls[0]
@@ -112,7 +112,7 @@ async def test_directory_scopes_query_to_caller_tenant() -> None:
 
 async def test_directory_empty_when_kc_unavailable() -> None:
     async for ac, _ in _make_client(kc=None):
-        r = await ac.get("/v1/directory/users")
+        r = await ac.get("/api/v1/directory/users")
         assert r.status_code == 200
         assert r.json()["data"] == []
 
@@ -120,7 +120,7 @@ async def test_directory_empty_when_kc_unavailable() -> None:
 async def test_directory_empty_on_keycloak_runtime_error() -> None:
     kc = _FakeKc(raises=KeycloakAdminError(503, "keycloak down"))
     async for ac, _ in _make_client(kc=kc):
-        r = await ac.get("/v1/directory/users")
+        r = await ac.get("/api/v1/directory/users")
         assert r.status_code == 200, r.text
         assert r.json()["data"] == []
 
@@ -128,7 +128,7 @@ async def test_directory_empty_on_keycloak_runtime_error() -> None:
 async def test_directory_empty_on_network_error() -> None:
     kc = _FakeKc(raises=httpx.ConnectError("boom"))
     async for ac, _ in _make_client(kc=kc):
-        r = await ac.get("/v1/directory/users")
+        r = await ac.get("/api/v1/directory/users")
         assert r.status_code == 200, r.text
         assert r.json()["data"] == []
 
@@ -136,5 +136,5 @@ async def test_directory_empty_on_network_error() -> None:
 async def test_directory_limit_too_large_rejected() -> None:
     kc = _FakeKc()
     async for ac, _ in _make_client(kc=kc):
-        r = await ac.get("/v1/directory/users", params={"limit": 500})
+        r = await ac.get("/api/v1/directory/users", params={"limit": 500})
         assert r.status_code == 422

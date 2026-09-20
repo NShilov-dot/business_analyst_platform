@@ -44,7 +44,7 @@ function clearRedirectLoopState(): void {
 }
 
 /**
- * Send the browser to /api/auth/login, preserving where we are.
+ * Send the browser to /api/v1/auth/login, preserving where we are.
  * Returns false (without navigating) if we appear to be in a redirect loop.
  */
 function redirectToLogin(): boolean {
@@ -59,7 +59,7 @@ function redirectToLogin(): boolean {
     /* sessionStorage unavailable — proceed without loop tracking */
   }
   const returnTo = window.location.pathname + window.location.search
-  window.location.assign(`/v1/auth/login?return_to=${encodeURIComponent(returnTo)}`)
+  window.location.assign(`/api/v1/auth/login?return_to=${encodeURIComponent(returnTo)}`)
   return true
 }
 

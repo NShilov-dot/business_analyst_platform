@@ -68,7 +68,7 @@ async def _client(*roles: str) -> AsyncIterator[tuple[httpx.AsyncClient, _FakeSe
 async def test_platform_admin_can_onboard_tenant() -> None:
     async for ac, fake in _client("platform_admin"):
         r = await ac.post(
-            "/v1/admin/tenants",
+            "/api/v1/admin/tenants",
             json={"slug": "acme", "name": "ACME Corp", "admin_email": "boss@acme.io"},
         )
         assert r.status_code == 201, r.text
@@ -80,7 +80,7 @@ async def test_platform_admin_can_onboard_tenant() -> None:
 async def test_non_platform_admin_cannot_onboard_tenant() -> None:
     async for ac, fake in _client("tenant_admin", "tenant_user"):
         r = await ac.post(
-            "/v1/admin/tenants",
+            "/api/v1/admin/tenants",
             json={"slug": "acme", "name": "ACME", "admin_email": "a@b.io"},
         )
         assert r.status_code == 403, r.text
@@ -90,7 +90,7 @@ async def test_non_platform_admin_cannot_onboard_tenant() -> None:
 @pytest.mark.asyncio
 async def test_tenant_admin_invites_into_own_tenant() -> None:
     async for ac, fake in _client("tenant_admin"):
-        r = await ac.post("/v1/admin/users", json={"email": "emp@acme.io"})
+        r = await ac.post("/api/v1/admin/users", json={"email": "emp@acme.io"})
         assert r.status_code == 201, r.text
         # tenant_id is the caller's, defaulted role is tenant_user
         assert fake.invited == [(_TID, "emp@acme.io", ("tenant_user",))]
@@ -99,7 +99,7 @@ async def test_tenant_admin_invites_into_own_tenant() -> None:
 @pytest.mark.asyncio
 async def test_tenant_user_cannot_invite() -> None:
     async for ac, fake in _client("tenant_user"):
-        r = await ac.post("/v1/admin/users", json={"email": "emp@acme.io"})
+        r = await ac.post("/api/v1/admin/users", json={"email": "emp@acme.io"})
         assert r.status_code == 403, r.text
         assert fake.invited == []
 
@@ -108,7 +108,7 @@ async def test_tenant_user_cannot_invite() -> None:
 async def test_tenant_admin_cannot_grant_platform_admin() -> None:
     async for ac, fake in _client("tenant_admin"):
         r = await ac.post(
-            "/v1/admin/users",
+            "/api/v1/admin/users",
             json={"email": "emp@acme.io", "roles": ["platform_admin"]},
         )
         assert r.status_code == 422  # schema rejects the disallowed role

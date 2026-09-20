@@ -14,10 +14,10 @@
 ```
 [тумблер «Голосовой режим» ON]
   → слушаем (микрофон + автостоп по тишине ~1.8 с)
-  → транскрибация (существующий POST /v1/intake-chat/transcriptions → bap-asr)
+  → транскрибация (существующий POST /api/v1/intake-chat/transcriptions → bap-asr)
   → автоотправка сообщением (существующий sendText)
   → ответ ассистента (существующий send_message, без изменений)
-  → озвучка ответа (НОВОЕ: POST /v1/intake-chat/speech → bap-asr /synthesize)
+  → озвучка ответа (НОВОЕ: POST /api/v1/intake-chat/speech → bap-asr /synthesize)
   → снова слушаем  (пока тумблер включён)
 ```
 

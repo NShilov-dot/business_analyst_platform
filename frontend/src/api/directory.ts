@@ -1,4 +1,4 @@
-/** Directory API (/v1/directory) — tenant user lookup backed by Keycloak. */
+/** Directory API (/api/v1/directory) — tenant user lookup backed by Keycloak. */
 
 import { api } from './client'
 import type { Envelope } from './tickets'
@@ -17,6 +17,6 @@ export const directoryApi = {
     const qs = new URLSearchParams()
     if (q) qs.set('q', q)
     qs.set('limit', String(limit))
-    return api.get<Envelope<DirectoryUser[]>>(`/v1/directory/users?${qs}`)
+    return api.get<Envelope<DirectoryUser[]>>(`/api/v1/directory/users?${qs}`)
   },
 }

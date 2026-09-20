@@ -85,7 +85,7 @@ There are **two Makefiles**, and which one you want depends on the task:
 make env          # scaffold ./.env from backend/.env.example + a fresh SESSION_ENCRYPTION_KEYS
 make up           # build & start full stack: postgres, keycloak(+db), redis, app, frontend
 make migrate      # apply PUBLIC-head migrations (docker compose exec app alembic -x scope=public upgrade public@head)
-make seed-demo    # seed the demo tenant (matches the realm-export seed users) so /v1/tasks works
+make seed-demo    # seed the demo tenant (matches the realm-export seed users) so /api/v1/tasks works
 # backend/.venv must exist for the quality gates below — deps are in backend/pyproject.toml (managed with uv)
 ```
 
@@ -106,7 +106,7 @@ Tests use `asyncio_mode=auto` (no `@pytest.mark.asyncio` needed). Integration te
 
 ### Frontend
 ```bash
-make fe-dev       # Vite dev server on :5173, proxies /v1 -> http://localhost:8000
+make fe-dev       # Vite dev server on :5173, proxies /api/v1 -> http://localhost:8000
 make fe-build     # tsc && vite build
 make dev-backend  # run uvicorn locally (loads ./.env, talks to docker-exposed ports); pair with fe-dev
 ```
@@ -129,10 +129,10 @@ make revision m="message"                             # autogenerate (root); or 
 ### Auth: BFF OIDC bridge (the core of this codebase)
 The browser holds **only an opaque, HttpOnly session-id cookie** (`bap_session`, or `__Host-bap_session` over HTTPS). Access/refresh/id tokens live **server-side in a Redis session, AES-256-GCM encrypted at rest** (`core/crypto.py`, `core/sessions.py`). Flow:
 
-1. `GET /v1/auth/login` (`api/v1/auth.py`) — generates `state` + PKCE (S256), stashes a `LoginState` in Redis (`login:{state}`, 5-min TTL), sets a path-scoped (`/v1/auth/callback`) HttpOnly `oidc_state` cookie, redirects to Keycloak using the **public issuer**.
-2. `GET /v1/auth/callback` — constant-time-compares the `state` cookie vs query param, one-shot-pops the Redis login state, exchanges the code for tokens over the **internal issuer**, verifies the access token locally, creates the encrypted Redis session, sets the session cookie.
+1. `GET /api/v1/auth/login` (`api/v1/auth.py`) — generates `state` + PKCE (S256), stashes a `LoginState` in Redis (`login:{state}`, 5-min TTL), sets a path-scoped (`/api/v1/auth/callback`) HttpOnly `oidc_state` cookie, redirects to Keycloak using the **public issuer**.
+2. `GET /api/v1/auth/callback` — constant-time-compares the `state` cookie vs query param, one-shot-pops the Redis login state, exchanges the code for tokens over the **internal issuer**, verifies the access token locally, creates the encrypted Redis session, sets the session cookie.
 3. Authenticated requests — `core/deps.py` `_principal()` reads the session cookie → loads & decrypts the Redis session → **auto-refreshes the access token if within 30s of expiry** → `verify_token()` (`core/security.py`) validates signature against cached JWKS and asserts `typ` is `Bearer` → slides the idle TTL → returns a `Principal(subject, tenant_id, roles)`.
-4. `POST /v1/auth/logout` — best-effort backchannel refresh-token revoke, deletes the Redis session, returns a Keycloak RP-Initiated Logout URL for the SPA to visit.
+4. `POST /api/v1/auth/logout` — best-effort backchannel refresh-token revoke, deletes the Redis session, returns a Keycloak RP-Initiated Logout URL for the SPA to visit.
 
 **Two Keycloak issuers** are intentional and a frequent source of confusion: `KEYCLOAK_ISSUER` (internal/backchannel, e.g. `http://keycloak:8080/...`, used for token exchange + JWKS) vs `KEYCLOAK_PUBLIC_ISSUER` (browser-facing, e.g. `http://localhost:8080/...`, used for redirects and as the token `iss` claim the backend validates against).
 
@@ -164,13 +164,13 @@ Each bounded context under `src/app/modules/<name>/` follows four layers with de
 Raise `DomainError` subclasses from domain/service code (never put HTTP status in messages). `core/error_handlers.py` converts them to `{"error": {code, message, details}, "meta": {requestId}}` with an `x-request-id` header. Success responses use the `Envelope`/`PagedEnvelope` wrappers.
 
 ### Frontend ↔ BFF
-Same-origin by design: both the Vite dev proxy (`vite.config.ts`) and production nginx (`frontend/nginx.conf`) forward `/v1/*` to the backend **without rewriting the path** — keep it that way or you break the path-scoped `oidc_state` cookie. `api/client.ts` sends every request with `credentials: 'include'` and bounces to `/v1/auth/login` on 401 (`AuthProvider.tsx` has a sessionStorage-based loop breaker: max 3 redirects / 10s). `auth/access.ts` (`canManageTask`, `isOwnTask`) is **UX gating only — the backend is the security boundary** and must independently authorize every endpoint.
+Same-origin by design: both the Vite dev proxy (`vite.config.ts`) and production nginx (`frontend/nginx.conf`) forward `/api/v1/*` to the backend **without rewriting the path** — keep it that way or you break the path-scoped `oidc_state` cookie. `api/client.ts` sends every request with `credentials: 'include'` and bounces to `/api/v1/auth/login` on 401 (`AuthProvider.tsx` has a sessionStorage-based loop breaker: max 3 redirects / 10s). `auth/access.ts` (`canManageTask`, `isOwnTask`) is **UX gating only — the backend is the security boundary** and must independently authorize every endpoint.
 
 ## Critical invariants & footguns
 - **Never trust `tenant_id` from input.** It comes solely from the verified token claim via `PrincipalDep`.
 - **Repositories `flush()`, the request dependency commits.** Don't `commit()` inside a repo or service.
 - **`SET LOCAL search_path` must stay transaction-scoped.** Don't drop `LOCAL` or set search_path on a session you reuse.
-- **Two issuers / same-origin `/v1` proxy** — both must hold or auth breaks in subtle ways (see Auth section).
+- **Two issuers / same-origin `/api/v1` proxy** — both must hold or auth breaks in subtle ways (see Auth section).
 - **Session encryption keys** (`SESSION_ENCRYPTION_KEYS`, base64 AES-256) are optional locally (plaintext fallback) but **mandatory in prod**; rotate by prepending a new key (decrypt tries all, newest-first). `make gen-key` prints one.
 - **Rate limiting** (`core/rate_limit.py`) is **fail-closed for unauthenticated auth endpoints** (Redis down ⇒ block) and **fail-open for authenticated traffic**. Client IP comes from `X-Real-IP` set by the reverse proxy — the backend must not be directly internet-reachable.
 - **`config.py` `validate_for_production()`** enforces HTTPS URLs, real secrets, Redis auth, encryption keys, CORS + trusted hosts when `app_env=prod`; it runs at startup (`main.py` lifespan). Adjust it when adding security-relevant settings.

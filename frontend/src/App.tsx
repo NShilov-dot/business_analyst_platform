@@ -20,7 +20,7 @@ const SignupPage       = lazy(() => import('./pages/SignupPage'))
 // Authenticated shell: the AuthProvider gate + the app chrome (sidebar/layout).
 // Everything nested under it requires a live session; public pages (signup) sit
 // OUTSIDE it so they render without bouncing through the OIDC login. Ticket data
-// now comes from /v1/tickets via TanStack Query — no shared provider needed.
+// now comes from /api/v1/tickets via TanStack Query — no shared provider needed.
 function AuthedShell() {
   return (
     <AuthProvider>

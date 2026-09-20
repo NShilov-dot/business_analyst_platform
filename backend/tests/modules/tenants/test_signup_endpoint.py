@@ -1,4 +1,4 @@
-"""Endpoint tests for the public self-service signup (POST /v1/signup).
+"""Endpoint tests for the public self-service signup (POST /api/v1/signup).
 
 The provisioning service and the rate-limit dependencies are overridden, so no
 real Keycloak/DB/Redis is touched — these assert routing, validation, the feature
@@ -81,12 +81,12 @@ async def _client(
 @pytest.mark.asyncio
 async def test_signup_creates_tenant() -> None:
     async for ac, fake in _client():
-        r = await ac.post("/v1/signup", json=_VALID_BODY)
+        r = await ac.post("/api/v1/signup", json=_VALID_BODY)
         assert r.status_code == 201, r.text
         body = r.json()
         assert body["slug"] == "acme"
         assert body["tenant_id"] == str(_TID)
-        assert body["login_url"] == "/v1/auth/login?return_to=/"
+        assert body["login_url"] == "/api/v1/auth/login?return_to=/"
         # The company name maps to the tenant name; password is forwarded verbatim.
         assert fake.calls == [
             {
@@ -102,7 +102,7 @@ async def test_signup_creates_tenant() -> None:
 @pytest.mark.asyncio
 async def test_signup_response_leaks_no_internal_ids() -> None:
     async for ac, _ in _client():
-        r = await ac.post("/v1/signup", json=_VALID_BODY)
+        r = await ac.post("/api/v1/signup", json=_VALID_BODY)
         body = r.json()
         # Internal Keycloak identifiers must never reach an anonymous caller.
         assert "keycloak_group_id" not in body
@@ -113,7 +113,7 @@ async def test_signup_response_leaks_no_internal_ids() -> None:
 @pytest.mark.asyncio
 async def test_signup_disabled_returns_404() -> None:
     async for ac, fake in _client(signup_enabled=False):
-        r = await ac.post("/v1/signup", json=_VALID_BODY)
+        r = await ac.post("/api/v1/signup", json=_VALID_BODY)
         assert r.status_code == 404, r.text
         assert fake.calls == []  # provisioning never invoked
 
@@ -121,7 +121,7 @@ async def test_signup_disabled_returns_404() -> None:
 @pytest.mark.asyncio
 async def test_signup_short_password_is_422() -> None:
     async for ac, fake in _client():
-        r = await ac.post("/v1/signup", json={**_VALID_BODY, "admin_password": "short"})
+        r = await ac.post("/api/v1/signup", json={**_VALID_BODY, "admin_password": "short"})
         assert r.status_code == 422
         assert fake.calls == []
 
@@ -129,7 +129,7 @@ async def test_signup_short_password_is_422() -> None:
 @pytest.mark.asyncio
 async def test_signup_bad_slug_is_422() -> None:
     async for ac, fake in _client():
-        r = await ac.post("/v1/signup", json={**_VALID_BODY, "slug": "Has Spaces!"})
+        r = await ac.post("/api/v1/signup", json={**_VALID_BODY, "slug": "Has Spaces!"})
         assert r.status_code == 422
         assert fake.calls == []
 
@@ -138,7 +138,7 @@ async def test_signup_bad_slug_is_422() -> None:
 async def test_signup_duplicate_slug_is_409() -> None:
     svc = _FakeService(raises=ConflictError("Tenant slug 'acme' already exists"))
     async for ac, _ in _client(service=svc):
-        r = await ac.post("/v1/signup", json=_VALID_BODY)
+        r = await ac.post("/api/v1/signup", json=_VALID_BODY)
         assert r.status_code == 409, r.text
 
 
@@ -146,6 +146,6 @@ async def test_signup_duplicate_slug_is_409() -> None:
 async def test_signup_weak_password_is_400() -> None:
     svc = _FakeService(raises=WeakPasswordError("Password does not meet the required policy"))
     async for ac, _ in _client(service=svc):
-        r = await ac.post("/v1/signup", json=_VALID_BODY)
+        r = await ac.post("/api/v1/signup", json=_VALID_BODY)
         assert r.status_code == 400, r.text
         assert r.json()["error"]["code"] == "WEAK_PASSWORD"

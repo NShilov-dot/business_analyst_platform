@@ -11,7 +11,7 @@ npm ci
 npm run dev          # http://localhost:5173
 ```
 
-The dev server proxies `/v1` to `http://localhost:8000`, so you need the backend
+The dev server proxies `/api/v1` to `http://localhost:8000`, so you need the backend
 running. From the **configs** repo: `make up` (full stack in Docker) or
 `make dev-backend` (uvicorn on the host).
 
@@ -31,7 +31,7 @@ BACKEND_UPSTREAM=https://ba-dev.example.com docker compose up -d --build
 # → http://localhost:3000
 ```
 
-`BACKEND_UPSTREAM` is where nginx proxies `/v1`. The full local stack doesn't use
+`BACKEND_UPSTREAM` is where nginx proxies `/api/v1`. The full local stack doesn't use
 this file — the configs repo builds this image itself and wires it to the `app`
 service.
 
@@ -41,4 +41,4 @@ React 18 · Vite 5 · TypeScript · TanStack Query · React Router v6 · Tailwin
 Radix + cva (shadcn pattern) · react-hook-form + zod.
 
 See [CLAUDE.md](CLAUDE.md) for architecture — in particular the BFF auth model
-(the browser never holds a token) and the `/v1`-without-rewrite invariant.
+(the browser never holds a token) and the `/api/v1`-without-rewrite invariant.

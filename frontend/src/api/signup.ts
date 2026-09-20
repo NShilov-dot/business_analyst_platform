@@ -15,5 +15,5 @@ export interface SignupResult {
 }
 
 export const signupApi = {
-  register: (input: SignupInput) => api.post<SignupResult>('/v1/signup', input),
+  register: (input: SignupInput) => api.post<SignupResult>('/api/v1/signup', input),
 }

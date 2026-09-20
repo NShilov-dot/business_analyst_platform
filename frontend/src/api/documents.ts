@@ -1,5 +1,5 @@
 /**
- * Documents API (/v1/documents) — per-tenant document library.
+ * Documents API (/api/v1/documents) — per-tenant document library.
  *
  * Files uploaded here can be attached to an AI-intake chat session
  * (see intakeChat.ts `startSession(templateVersionId, documentIds)`); the
@@ -43,14 +43,14 @@ export const documentsApi = {
     if (params.limit !== undefined) qs.set('limit', String(params.limit))
     if (params.offset !== undefined) qs.set('offset', String(params.offset))
     const q = qs.toString() ? `?${qs}` : ''
-    return api.get<PagedEnvelope<TenantDocument>>(`/v1/documents${q}`)
+    return api.get<PagedEnvelope<TenantDocument>>(`/api/v1/documents${q}`)
   },
 
   upload(file: File) {
     const form = new FormData()
     form.append('file', file)
-    return postForm<Envelope<TenantDocument>>('/v1/documents', form)
+    return postForm<Envelope<TenantDocument>>('/api/v1/documents', form)
   },
 
-  remove: (id: string) => api.delete(`/v1/documents/${id}`),
+  remove: (id: string) => api.delete(`/api/v1/documents/${id}`),
 }

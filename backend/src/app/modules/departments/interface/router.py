@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/departments.
+"""FastAPI router for /api/v1/departments.
 
 Read endpoints (GET list, GET by id) are open to any authenticated tenant
 member. Write endpoints (POST create, PATCH update, POST members, DELETE

@@ -1,6 +1,6 @@
 """Directory API — tenant-scoped user listing for UI pickers.
 
-GET /v1/directory/users
+GET /api/v1/directory/users
   Lists members of the caller's tenant backed by Keycloak.
   Any authenticated tenant member may call this endpoint.
   When the Keycloak Admin integration is not configured (kc is None) the

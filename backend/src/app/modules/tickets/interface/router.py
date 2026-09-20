@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/tickets.
+"""FastAPI router for /api/v1/tickets.
 
 RBAC model (open access + mandatory triage, per the domain brief):
 - ANY authenticated tenant member may create/read tickets.

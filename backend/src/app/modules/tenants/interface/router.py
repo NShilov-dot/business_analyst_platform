@@ -1,7 +1,7 @@
 """Admin endpoints for tenant + member onboarding.
 
-  POST /v1/admin/tenants  — register an organization (requires platform_admin)
-  POST /v1/admin/users    — invite an employee into the CALLER'S tenant
+  POST /api/v1/admin/tenants  — register an organization (requires platform_admin)
+  POST /api/v1/admin/users    — invite an employee into the CALLER'S tenant
                             (requires tenant_admin)
 
 Cross-tenant invariant: the member's tenant_id is taken from the caller's

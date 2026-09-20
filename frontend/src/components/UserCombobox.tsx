@@ -1,5 +1,5 @@
 /**
- * UserCombobox — searchable user picker backed by /v1/directory/users.
+ * UserCombobox — searchable user picker backed by /api/v1/directory/users.
  *
  * Controlled: value = selected Keycloak subject (UUID) | null.
  * Displays full_name in the text input; emits the subject UUID on selection.

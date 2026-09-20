@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/intake-chat.
+"""FastAPI router for /api/v1/intake-chat.
 
 Any authenticated tenant member may run their own AI-intake sessions (open
 access + mandatory triage — the resulting ticket still goes through triage).

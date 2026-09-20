@@ -122,7 +122,7 @@ services:
     restart: unless-stopped
 
   # Edge reverse proxy — the single public entry point. Serves the SPA (via
-  # frontend) and proxies /v1 -> app on ONE origin. Config + published ports +
+  # frontend) and proxies /api/v1 -> app on ONE origin. Config + published ports +
   # TLS come from the overlay (nginx/nginx.dev.conf vs nginx/nginx.prod.conf).
   nginx:
     image: nginx:1.27-alpine

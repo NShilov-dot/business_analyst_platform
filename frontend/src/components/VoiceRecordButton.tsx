@@ -7,7 +7,7 @@
  * accept (stop → transcribe). The parent hides the textarea/send while
  * recording via `onRecordingChange` so the strip takes the composer row.
  *
- * Records with MediaRecorder, uploads to /v1/intake-chat/transcriptions,
+ * Records with MediaRecorder, uploads to /api/v1/intake-chat/transcriptions,
  * hands the transcribed text back via `onTranscript`. Manual fetch (not
  * useMutation) is deliberate: the app-wide MutationCache (main.tsx) toasts
  * every mutation error itself, so a useMutation here would double-toast.

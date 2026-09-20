@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/templates.
+"""FastAPI router for /api/v1/templates.
 
 Read endpoints (GET list, GET by id, GET selection-rules) are open to any
 authenticated tenant member.  Write endpoints (POST create, PATCH draft fields,

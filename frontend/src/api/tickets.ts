@@ -1,5 +1,5 @@
 /**
- * Tickets API (/v1/tickets) — the product's core aggregate.
+ * Tickets API (/api/v1/tickets) — the product's core aggregate.
  *
  * Mirrors app.modules.tickets.interface.schemas. The gated, branching workflow
  * state machine lives on the backend; this client only exposes each edge as a
@@ -156,34 +156,34 @@ export const ticketsApi = {
     if (params.limit !== undefined) qs.set('limit', String(params.limit))
     if (params.offset !== undefined) qs.set('offset', String(params.offset))
     const q = qs.toString() ? `?${qs}` : ''
-    return api.get<PagedEnvelope<Ticket>>(`/v1/tickets${q}`)
+    return api.get<PagedEnvelope<Ticket>>(`/api/v1/tickets${q}`)
   },
 
-  get: (id: string) => api.get<Envelope<TicketDetail>>(`/v1/tickets/${id}`),
-  transitions: (id: string) => api.get<Envelope<Transition[]>>(`/v1/tickets/${id}/transitions`),
-  attestations: (id: string) => api.get<Envelope<Attestation[]>>(`/v1/tickets/${id}/attestations`),
+  get: (id: string) => api.get<Envelope<TicketDetail>>(`/api/v1/tickets/${id}`),
+  transitions: (id: string) => api.get<Envelope<Transition[]>>(`/api/v1/tickets/${id}/transitions`),
+  attestations: (id: string) => api.get<Envelope<Attestation[]>>(`/api/v1/tickets/${id}/attestations`),
 
-  create: (input: CreateTicketInput) => api.post<Envelope<TicketDetail>>('/v1/tickets', input),
-  submit: (id: string) => api.post<Envelope<Ticket>>(`/v1/tickets/${id}/submit`),
+  create: (input: CreateTicketInput) => api.post<Envelope<TicketDetail>>('/api/v1/tickets', input),
+  submit: (id: string) => api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/submit`),
   triageAccept: (id: string, body: TriageAcceptInput) =>
-    api.post<Envelope<Ticket>>(`/v1/tickets/${id}/triage-accept`, body),
+    api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/triage-accept`, body),
   returnForRefinement: (id: string, comment: string) =>
-    api.post<Envelope<Ticket>>(`/v1/tickets/${id}/return-for-refinement`, { comment }),
+    api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/return-for-refinement`, { comment }),
   reject: (id: string, body: RejectInput) =>
-    api.post<Envelope<Ticket>>(`/v1/tickets/${id}/reject`, body),
+    api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/reject`, body),
   assign: (id: string, role: AssignmentRole, subject: string) =>
-    api.post<Envelope<Assignment>>(`/v1/tickets/${id}/assign`, { role, subject }),
+    api.post<Envelope<Assignment>>(`/api/v1/tickets/${id}/assign`, { role, subject }),
   attestSpecApproval: (id: string, body: SpecApprovalInput) =>
-    api.post<Envelope<Attestation>>(`/v1/tickets/${id}/attest/spec-approval`, body),
-  startWork: (id: string) => api.post<Envelope<Ticket>>(`/v1/tickets/${id}/start-work`),
-  finishWork: (id: string) => api.post<Envelope<Ticket>>(`/v1/tickets/${id}/finish-work`),
+    api.post<Envelope<Attestation>>(`/api/v1/tickets/${id}/attest/spec-approval`, body),
+  startWork: (id: string) => api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/start-work`),
+  finishWork: (id: string) => api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/finish-work`),
   requestAcceptance: (id: string, changes_summary: string) =>
-    api.post<Envelope<Ticket>>(`/v1/tickets/${id}/request-acceptance`, { changes_summary }),
+    api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/request-acceptance`, { changes_summary }),
   attestFormalDod: (id: string, checklist: Record<string, boolean>, comment?: string) =>
-    api.post<Envelope<Attestation>>(`/v1/tickets/${id}/attest/formal-dod`, { checklist, comment }),
+    api.post<Envelope<Attestation>>(`/api/v1/tickets/${id}/attest/formal-dod`, { checklist, comment }),
   attestBusinessValue: (id: string, comment?: string) =>
-    api.post<Envelope<Attestation>>(`/v1/tickets/${id}/attest/business-value`, { comment }),
+    api.post<Envelope<Attestation>>(`/api/v1/tickets/${id}/attest/business-value`, { comment }),
   returnToWork: (id: string, comment: string) =>
-    api.post<Envelope<Ticket>>(`/v1/tickets/${id}/return-to-work`, { comment }),
-  close: (id: string) => api.post<Envelope<Ticket>>(`/v1/tickets/${id}/close`),
+    api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/return-to-work`, { comment }),
+  close: (id: string) => api.post<Envelope<Ticket>>(`/api/v1/tickets/${id}/close`),
 }

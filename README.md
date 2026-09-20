@@ -19,7 +19,7 @@ Kubernetes.
   verified JWT claim (never from input) and pins a transaction-scoped
   `search_path` — data can't bleed across tenants.
 - **Self-service signup + admin invites.** A company self-registers at
-  `POST /v1/signup`; its admin invites employees. Rate-limited, brute-force- and
+  `POST /api/v1/signup`; its admin invites employees. Rate-limited, brute-force- and
   password-policy-hardened.
 - **Hexagonal modules.** Each feature is a clean domain/application/
   infrastructure/interface slice. `make new-module` scaffolds one.

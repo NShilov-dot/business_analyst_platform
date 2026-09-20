@@ -69,7 +69,7 @@ def test_public_issuer_used_for_browser_endpoints_internal_for_backchannel() -> 
         client_secret="topsecret",
     )
     authorize = client.build_authorize_url(
-        redirect_uri="http://localhost:3000/v1/auth/callback",
+        redirect_uri="http://localhost:3000/api/v1/auth/callback",
         state="S",
         pkce_challenge="C",
     )
@@ -124,7 +124,7 @@ def test_state_is_url_safe_and_nontrivial() -> None:
 def test_authorize_url_contains_required_params() -> None:
     client = _make_client()
     url = client.build_authorize_url(
-        redirect_uri="http://localhost:8000/v1/auth/callback",
+        redirect_uri="http://localhost:8000/api/v1/auth/callback",
         state="STATE123",
         pkce_challenge="CHALLENGE",
     )
@@ -135,7 +135,7 @@ def test_authorize_url_contains_required_params() -> None:
     assert qs["state"] == ["STATE123"]
     assert qs["code_challenge"] == ["CHALLENGE"]
     assert qs["code_challenge_method"] == ["S256"]
-    assert qs["redirect_uri"] == ["http://localhost:8000/v1/auth/callback"]
+    assert qs["redirect_uri"] == ["http://localhost:8000/api/v1/auth/callback"]
     assert parsed.path.endswith("/openid-connect/auth")
 
 
@@ -162,7 +162,7 @@ async def test_exchange_code_returns_tokenset() -> None:
     client = _make_client(route)
     result = await client.exchange_code(
         code="abc",
-        redirect_uri="http://localhost:8000/v1/auth/callback",
+        redirect_uri="http://localhost:8000/api/v1/auth/callback",
         pkce_verifier="VERIFIER",
     )
     assert result.access_token == "AT"

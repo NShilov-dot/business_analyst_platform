@@ -488,7 +488,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] lg:items-start">
-        {/* Flow chart — REAL data from /v1/analytics/ticket-flow */}
+        {/* Flow chart — REAL data from /api/v1/analytics/ticket-flow */}
         <div className="rounded-2xl border border-border bg-card px-[22px] py-4">
           <div className="mb-2 flex items-start justify-between">
             <div>
@@ -676,7 +676,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Activity feed — REAL data from /v1/analytics/activity */}
+        {/* Activity feed — REAL data from /api/v1/analytics/activity */}
         <div className="rounded-2xl border border-border bg-card px-[22px] py-4">
           <div className="mb-0.5 text-[15px] font-semibold">Последние события</div>
           <div className="mb-3 text-[12.5px] text-muted-foreground">Аудит-лог по тикетам.</div>

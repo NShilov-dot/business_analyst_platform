@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/notifications.
+"""FastAPI router for /api/v1/notifications.
 
 Access gate: any authenticated tenant member — every caller reads their OWN
 feed, derived from their ticket involvement.  No role check: `ba` widens what
@@ -42,7 +42,7 @@ ServiceDep = Annotated[NotificationsService, Depends(_service)]
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/notifications
+# GET /api/v1/notifications
 # ---------------------------------------------------------------------------
 
 
@@ -69,7 +69,7 @@ async def list_notifications(
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/notifications/read
+# POST /api/v1/notifications/read
 # ---------------------------------------------------------------------------
 
 

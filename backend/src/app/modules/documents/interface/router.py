@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/documents — the tenant's document library.
+"""FastAPI router for /api/v1/documents — the tenant's document library.
 
 Any authenticated tenant member may upload and browse their own documents;
 ba/tenant_admin/platform_admin see the whole tenant library for triage

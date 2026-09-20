@@ -149,9 +149,9 @@ compliance) отвергнут: §9 говорит «платформа выбр
 (4) Триаж — не отдельный контекст: это стадия жизни тикета, его решения мутируют
 тикет транзакционно.
 
-**API.** `/v1/tickets` + action-POSTs (`/triage`, `/reject`, `/approve-m-plus`,
+**API.** `/api/v1/tickets` + action-POSTs (`/triage`, `/reject`, `/approve-m-plus`,
 `/start-work`, `/return-to-work`, `/close`) по образцу `/tasks/{id}/start`;
-плюс pre-MVP endpoint `/v1/tickets/stats/intake-share` (см. `analytics`).
+плюс pre-MVP endpoint `/api/v1/tickets/stats/intake-share` (см. `analytics`).
 
 ### 4.2. `intake_templates` — full, Pre-MVP
 
@@ -174,7 +174,7 @@ free_form) + валидация подач.
 - Привязка «Цель бизнеса → BG» (§6.3): в Фазе 1 — обязательное текстовое поле;
   nullable `bg_item_id` в `requirements` появляется в MVP (закрытие фазовой дыры).
 
-**API.** `/v1/templates`.
+**API.** `/api/v1/templates`.
 
 ### 4.3. `departments` — thin, Pre-MVP
 
@@ -195,7 +195,7 @@ free_form) + валидация подач.
 (`department_id` на каждом тикете + один посеянный отдел); DataZone-фильтр
 строится в Фазе 2 при подключении второго отдела.
 
-**API.** `/v1/departments`.
+**API.** `/api/v1/departments`.
 
 ### 4.4. `audit` — thin, Pre-MVP
 
@@ -218,7 +218,7 @@ request_id, occurred_at); `RetentionPolicy` — позже.
 - Выходит в Pre-MVP: статусная модель Фазы 1 уже порождает юридически значимую
   историю; ретрофит аудита = навсегда потерянная история.
 
-**API.** `/v1/audit` (гейт `require_roles`).
+**API.** `/api/v1/audit` (гейт `require_roles`).
 
 ### 4.5. `requirements` — full, MVP
 
@@ -254,8 +254,8 @@ request_id, occurred_at); `RetentionPolicy` — позже.
 - Артефакт крепится к тикету через `source_ticket_id` FK; статусы артефакта и
   тикета никогда не синхронизируются автоматически.
 
-**API.** `/v1/tickets/{id}/artifacts`, `/v1/artifacts/{id}/items`,
-`/v1/requirements/{key}/trace`.
+**API.** `/api/v1/tickets/{id}/artifacts`, `/api/v1/artifacts/{id}/items`,
+`/api/v1/requirements/{key}/trace`.
 
 ### 4.6. `acceptance` — full, MVP
 
@@ -289,7 +289,7 @@ request_id, occurred_at); `RetentionPolicy` — позже.
   (read-only в транзакции перехода `Закрыт`) — инвариант остаётся у тикета,
   протокол — здесь.
 
-**API.** `/v1/tickets/{id}/changes`, `/v1/tickets/{id}/acceptance`.
+**API.** `/api/v1/tickets/{id}/changes`, `/api/v1/tickets/{id}/acceptance`.
 
 ### 4.7. `analytics` — thin, MVP
 
@@ -305,7 +305,7 @@ request_id, occurred_at); `RetentionPolicy` — позже.
 (phasing) решён в пользу простоты: на масштабе 2–3 отделов — тонкие SQL-сервисы
 над append-only таблицами источников; без warehouse, без outbox-консьюмеров.
 Правило compliance «никогда не читать чужие таблицы» отвергнуто как
-преждевременное. Стабильный контракт — `/v1/analytics/*`; в Фазе 3 реализацию
+преждевременное. Стабильный контракт — `/api/v1/analytics/*`; в Фазе 3 реализацию
 можно подменить на проекции. **Pre-MVP срез**: счётчик доли шаблонных подач
 (exit-критерий Фазы 1) живёт в `tickets` как простой endpoint по собственной
 таблице — модуль analytics не вытягивается вперёд. Fact-данные — только UUID
@@ -333,7 +333,7 @@ Outbox живёт **только** здесь. Вместе с первым ад
 (§8: Jira Cloud вне контура резидентности РУз). Переходы Триаж/Приёмка/Закрыт —
 исключительно у `tickets`: двойной гейт нельзя обойти из Jira.
 
-**API.** `/v1/integrations` (конфиг, health, webhooks).
+**API.** `/api/v1/integrations` (конфиг, health, webhooks).
 
 ### 4.9. `ai_structuring` — thin, Scale (Фаза 3)
 
@@ -372,8 +372,8 @@ Outbox живёт **только** здесь. Вместе с первым ад
 | Человеческий контроль (§8) | структура зависимостей | Гейты/переходы требуют человека-Principal; у `ai_structuring` нет портов переходов/утверждений — контроль по построению. |
 | Alembic | tenant-ветка | Все новые таблицы — `{"info": {"tenant_scope": "tenant"}}`; public-head — только `public.tenants`. Держит оба исхода «отдел=tenant» открытыми. |
 | Доказательства (файлы) | порт `EvidencePort` в `acceptance` | Решение S3-совместимый стор vs bytea — именованный чекпоинт до заморозки MVP-схемы. |
-| Уведомления (§3) | `modules/notifications` (pull-часть реализована) | Фазы 1–2 — pull-модель: `GET /v1/notifications` выводит ленту из `audit_entries` по участию в заявке (автор / активное назначение / ранее действовал; роль `ba` дополнительно видит очередь `submitted`+`acceptance_requested`), своих событий актору не показывает; единственная хранимая таблица — `notification_reads`, по строке на (пользователь, событие): отметка поэлементная, а не watermark, иначе «погасить одно уведомление» гасило бы и все более старые. Наружу отдаются только `{ticket_id, ticket_title, action, actor, occurred_at}` — `before`/`after`/`roles` остаются за гейтом `/v1/audit`. Фронт опрашивает раз в минуту; в панели по умолчанию только непрочитанные, кнопка «Все» показывает последние 20 событий вместе с прочитанными (без пагинации). Push / тонкий потребитель на шине событий — по-прежнему после MVP: шина fail-closed и делит транзакцию с записью тикета, вывод на чтении ретроактивен и не требует бэкфилла. |
-| Ошибки / envelope / rate-limit / CSRF | `core/*` как есть | DomainError-подклассы per-module; `{error, meta}` + x-request-id; `check_rate_limit`/`check_csrf` как router-deps по образцу tasks; BFF/OIDC и same-origin `/v1`-прокси не трогаются. |
+| Уведомления (§3) | `modules/notifications` (pull-часть реализована) | Фазы 1–2 — pull-модель: `GET /api/v1/notifications` выводит ленту из `audit_entries` по участию в заявке (автор / активное назначение / ранее действовал; роль `ba` дополнительно видит очередь `submitted`+`acceptance_requested`), своих событий актору не показывает; единственная хранимая таблица — `notification_reads`, по строке на (пользователь, событие): отметка поэлементная, а не watermark, иначе «погасить одно уведомление» гасило бы и все более старые. Наружу отдаются только `{ticket_id, ticket_title, action, actor, occurred_at}` — `before`/`after`/`roles` остаются за гейтом `/api/v1/audit`. Фронт опрашивает раз в минуту; в панели по умолчанию только непрочитанные, кнопка «Все» показывает последние 20 событий вместе с прочитанными (без пагинации). Push / тонкий потребитель на шине событий — по-прежнему после MVP: шина fail-closed и делит транзакцию с записью тикета, вывод на чтении ретроактивен и не требует бэкфилла. |
+| Ошибки / envelope / rate-limit / CSRF | `core/*` как есть | DomainError-подклассы per-module; `{error, meta}` + x-request-id; `check_rate_limit`/`check_csrf` как router-deps по образцу tasks; BFF/OIDC и same-origin `/api/v1`-прокси не трогаются. |
 
 ## 6. Порядок сборки
 

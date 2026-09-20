@@ -49,7 +49,7 @@ company, then log in as that founder and invite a teammate.
 ## 2. Local development
 
 ```bash
-make fe-dev         # Vite dev server on :5173 (proxies /v1 -> backend); fast FE iteration
+make fe-dev         # Vite dev server on :5173 (proxies /api/v1 -> backend); fast FE iteration
 make dev-backend    # run uvicorn locally with reload (talks to the docker-exposed services)
 ```
 
@@ -83,7 +83,7 @@ the schema at `/openapi.json`. (Disabled automatically when `APP_ENV=prod`.)
 | Symptom | Cause / fix |
 |---|---|
 | `make up` can't reach the Docker API | Docker isn't running — start Docker Desktop. |
-| `Tenant … not found or inactive` on `/v1/tasks` | The demo tenant isn't seeded after a reset — run `make seed-demo` (all seed users resolve into this tenant). |
+| `Tenant … not found or inactive` on `/api/v1/tasks` | The demo tenant isn't seeded after a reset — run `make seed-demo` (all seed users resolve into this tenant). |
 | Login redirect goes to `http://keycloak:8080/...` (unreachable in the browser) | `KEYCLOAK_PUBLIC_ISSUER` must be the **browser-facing** URL (`http://localhost:8080/...`), distinct from the internal `KEYCLOAK_ISSUER` (`http://keycloak:8080/...`). See the two-issuer note below. |
 | `Invalid username or password` for a valid user | Keycloak brute-force lockout after repeated attempts — wait, or clear via the admin API / Keycloak console. |
 | Port conflicts | Edit the loopback port mappings in `docker-compose.dev.yml`, or `make clean` then `make up`. |

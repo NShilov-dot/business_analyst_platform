@@ -24,7 +24,7 @@ export interface ActivityItem {
 
 export const analyticsApi = {
   ticketFlow: (weeks = 24) =>
-    api.get<Envelope<TicketFlow>>(`/v1/analytics/ticket-flow?weeks=${weeks}`),
+    api.get<Envelope<TicketFlow>>(`/api/v1/analytics/ticket-flow?weeks=${weeks}`),
   activity: (limit = 8) =>
-    api.get<Envelope<ActivityItem[]>>(`/v1/analytics/activity?limit=${limit}`),
+    api.get<Envelope<ActivityItem[]>>(`/api/v1/analytics/activity?limit=${limit}`),
 }

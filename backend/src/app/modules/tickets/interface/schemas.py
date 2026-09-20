@@ -1,4 +1,4 @@
-"""Pydantic request/response schemas for /v1/tickets.
+"""Pydantic request/response schemas for /api/v1/tickets.
 
 Requests convert to application-layer commands via ``to_command()``;
 responses are built from domain entities via ``from_entity()``.

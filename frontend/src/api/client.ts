@@ -7,10 +7,10 @@
  *
  * Single-origin: the SPA and the backend are served from the same origin (the
  * edge — nginx in docker, the Vite dev proxy locally), so the API is reached at
- * the backend's own paths (/v1/...) with no prefix rewrite. That keeps the
+ * the backend's own paths (/api/v1/...) with no prefix rewrite. That keeps the
  * session cookie same-origin and the path-scoped oidc_state cookie aligned.
  *
- * On 401 we bounce to /v1/auth/login so the backend can start an OIDC
+ * On 401 we bounce to /api/v1/auth/login so the backend can start an OIDC
  * round-trip with Keycloak. The user lands back on the page they came from.
  */
 
@@ -32,7 +32,7 @@ async function checkResponse(res: Response, path: string): Promise<void> {
   if (res.status === 401) {
     // Session is dead — kick the user back through the OIDC flow.
     // /auth/me is the one exception (the AuthProvider handles that case itself).
-    if (!path.startsWith('/v1/auth/me')) {
+    if (!path.startsWith('/api/v1/auth/me')) {
       redirectToLogin()
     }
     throw new ApiError(401, null)

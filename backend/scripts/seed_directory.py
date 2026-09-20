@@ -16,7 +16,7 @@ Env overrides (sensible dev defaults):
     SEED_PASSWORD  demo-password-123
 
 Each user is created enabled+verified, gets the ``tenant_id`` attribute (this is
-what the /v1/directory/users query filters on — the run VERIFIES it persisted),
+what the /api/v1/directory/users query filters on — the run VERIFIES it persisted),
 a permanent password, and its realm roles. Existing users are left untouched.
 
 Departments are seeded separately via SQL (see the accompanying psql step / the
@@ -147,7 +147,7 @@ def main() -> int:
         if verified_fail:
             print(
                 "WARNING: tenant_id attribute did not persist on some users — they will NOT appear "
-                "in /v1/directory/users. Check the realm user-profile unmanagedAttributePolicy.",
+                "in /api/v1/directory/users. Check the realm user-profile unmanagedAttributePolicy.",
                 file=sys.stderr,
             )
             return 2

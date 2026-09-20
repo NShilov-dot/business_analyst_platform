@@ -1,4 +1,4 @@
-"""Endpoint tests for POST /v1/intake-chat/transcriptions[/speech|/warmup].
+"""Endpoint tests for POST /api/v1/intake-chat/transcriptions[/speech|/warmup].
 
 Covers:
 - happy path (200), content-type normalization (webm;codecs=opus), unsupported
@@ -76,7 +76,7 @@ async def test_transcribe_happy_path() -> None:
     fake = _FakeTranscriber(text="Привет мир")
     async for ac, f in _make_client(fake=fake):
         r = await ac.post(
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.webm", b"raw-bytes", "audio/webm")},
         )
         assert r.status_code == 200, r.text
@@ -89,7 +89,7 @@ async def test_transcribe_normalizes_codecs_suffix() -> None:
     fake = _FakeTranscriber()
     async for ac, f in _make_client(fake=fake):
         r = await ac.post(
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.webm", b"raw-bytes", "audio/webm;codecs=opus")},
         )
         assert r.status_code == 200, r.text
@@ -100,7 +100,7 @@ async def test_transcribe_normalizes_codecs_suffix() -> None:
 async def test_transcribe_unsupported_content_type_rejected() -> None:
     async for ac, _ in _make_client():
         r = await ac.post(
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.txt", b"hello", "text/plain")},
         )
         assert r.status_code == 415
@@ -108,13 +108,13 @@ async def test_transcribe_unsupported_content_type_rejected() -> None:
 
 
 async def test_transcribe_oversized_upload_rejected() -> None:
-    # Proves the /v1/intake-chat/transcriptions prefix is exempt from the
+    # Proves the /api/v1/intake-chat/transcriptions prefix is exempt from the
     # global 1 MiB LimitBodySizeMiddleware cap — otherwise this would be a
     # generic PAYLOAD_TOO_LARGE well below AUDIO_MAX_BYTES.
     oversized = b"x" * (AUDIO_MAX_BYTES + 1)
     async for ac, _ in _make_client():
         r = await ac.post(
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.wav", oversized, "audio/wav")},
         )
         assert r.status_code == 413
@@ -126,7 +126,7 @@ async def test_transcribe_disabled_feature_returns_503() -> None:
     # which reads settings — conftest leaves TRANSCRIPTION_* unset.
     async for ac, _ in _make_client(override_transcriber=False):
         r = await ac.post(
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.wav", b"some-bytes", "audio/wav")},
         )
         assert r.status_code == 503
@@ -141,7 +141,7 @@ async def test_transcribe_oversized_content_length_header_rejected() -> None:
     async for ac, _ in _make_client():
         request = ac.build_request(
             "POST",
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.wav", b"tiny-body", "audio/wav")},
         )
         request.headers["content-length"] = str(oversized_declared)
@@ -153,7 +153,7 @@ async def test_transcribe_oversized_content_length_header_rejected() -> None:
 async def test_transcribe_empty_upload_rejected() -> None:
     async for ac, _ in _make_client():
         r = await ac.post(
-            "/v1/intake-chat/transcriptions",
+            "/api/v1/intake-chat/transcriptions",
             files={"file": ("v.wav", b"", "audio/wav")},
         )
         assert r.status_code == 422
@@ -163,7 +163,7 @@ async def test_synthesize_speech_happy_path() -> None:
     fake = _FakeTranscriber(audio=b"RIFF....WAVEfmt ")
     async for ac, f in _make_client(fake=fake):
         r = await ac.post(
-            "/v1/intake-chat/transcriptions/speech",
+            "/api/v1/intake-chat/transcriptions/speech",
             json={"text": "Здравствуйте, чем могу помочь?"},
         )
         assert r.status_code == 200, r.text
@@ -178,7 +178,7 @@ async def test_synthesize_speech_disabled_feature_returns_503() -> None:
     # which reads settings — conftest leaves TRANSCRIPTION_* unset.
     async for ac, _ in _make_client(override_transcriber=False):
         r = await ac.post(
-            "/v1/intake-chat/transcriptions/speech",
+            "/api/v1/intake-chat/transcriptions/speech",
             json={"text": "hello"},
         )
         assert r.status_code == 503
@@ -188,7 +188,7 @@ async def test_synthesize_speech_disabled_feature_returns_503() -> None:
 async def test_synthesize_speech_empty_text_rejected() -> None:
     async for ac, _ in _make_client():
         r = await ac.post(
-            "/v1/intake-chat/transcriptions/speech",
+            "/api/v1/intake-chat/transcriptions/speech",
             json={"text": ""},
         )
         assert r.status_code == 422
@@ -197,7 +197,7 @@ async def test_synthesize_speech_empty_text_rejected() -> None:
 async def test_synthesize_speech_whitespace_only_text_rejected() -> None:
     async for ac, _ in _make_client():
         r = await ac.post(
-            "/v1/intake-chat/transcriptions/speech",
+            "/api/v1/intake-chat/transcriptions/speech",
             json={"text": "   "},
         )
         assert r.status_code == 422
@@ -207,7 +207,7 @@ async def test_synthesize_speech_whitespace_only_text_rejected() -> None:
 async def test_synthesize_speech_text_over_max_length_rejected() -> None:
     async for ac, _ in _make_client():
         r = await ac.post(
-            "/v1/intake-chat/transcriptions/speech",
+            "/api/v1/intake-chat/transcriptions/speech",
             json={"text": "x" * 2001},
         )
         assert r.status_code == 422
@@ -216,7 +216,7 @@ async def test_synthesize_speech_text_over_max_length_rejected() -> None:
 async def test_warmup_returns_202_and_calls_warmup() -> None:
     fake = _FakeTranscriber()
     async for ac, f in _make_client(fake=fake):
-        r = await ac.post("/v1/intake-chat/transcriptions/warmup")
+        r = await ac.post("/api/v1/intake-chat/transcriptions/warmup")
         assert r.status_code == 202, r.text
         assert r.json()["data"]["status"] == "warming"
         assert f is not None
@@ -225,5 +225,5 @@ async def test_warmup_returns_202_and_calls_warmup() -> None:
 
 async def test_warmup_returns_202_even_when_disabled() -> None:
     async for ac, _ in _make_client(override_transcriber=False):
-        r = await ac.post("/v1/intake-chat/transcriptions/warmup")
+        r = await ac.post("/api/v1/intake-chat/transcriptions/warmup")
         assert r.status_code == 202, r.text

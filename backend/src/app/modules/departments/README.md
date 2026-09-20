@@ -8,7 +8,7 @@ seam for data-zone access control.
 - `Department` entity: name (unique per tenant), description, is_active flag.
 - `DepartmentMembership`: maps a Keycloak `sub` to a department row (many
   subjects per department; one subject may belong to multiple departments).
-- CRUD API at `/v1/departments` — list/get open to all authenticated tenant
+- CRUD API at `/api/v1/departments` — list/get open to all authenticated tenant
   members; create/update/member-management restricted to `tenant_admin` or
   `platform_admin`.
 - Alembic tenant-branch migration (`0003_tenant_departments`) — tables live

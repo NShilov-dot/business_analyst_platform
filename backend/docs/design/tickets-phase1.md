@@ -34,7 +34,7 @@ Declared-зависимости: `tickets → intake_templates` (порт `Submi
 
 ```mermaid
 stateDiagram-v2
-    [*] --> created : POST /v1/tickets
+    [*] --> created : POST /api/v1/tickets
     created --> triage : submit — валидация ядра §6.3
     triage --> spec_approval : triage accept — маршрутизация + business_owner
     triage --> created : return-for-refinement [PO]
@@ -123,33 +123,33 @@ stateDiagram-v2
 
 `TicketService` — dataclass: `repo`, `validator`, `dept_lookup`, `version_info`, `spec_gate`, `acceptance_gate`, `tracker`, `clock`, **`publisher: EventPublisher` — обязательное поле** (докстринг `core.events.NoopPublisher` прямо запрещает молчаливый дефолт; тесты инжектят `NoopPublisher`/записывающий фейк осознанно).
 
-## 6. API (`/v1/tickets`)
+## 6. API (`/api/v1/tickets`)
 
 Router deps: `check_rate_limit` + `check_csrf` (идиома tasks/departments). ANY-of роли — на уровне router-dependency; per-object — в сервисе. **Footgun порядка роутов: `GET /stats/intake-share` регистрируется ДО `/{ticket_id}`**, иначе FastAPI парсит `stats` как UUID → 422.
 
 | Метод | Путь | Роли | Назначение |
 |---|---|---|---|
-| POST | `/v1/tickets` | любой сотрудник | создать тикет (`created`) + подача v1 + строка истории; 201 |
-| GET | `/v1/tickets` | любой | пагинированный список; фильтры status / department_id / mine / assigned_to_me |
-| GET | `/v1/tickets/stats/intake-share` | ba ∨ admins | метрика §9 (см. §8 ниже) |
-| GET | `/v1/tickets/{id}` | любой | деталь: ядро + текущая подача + назначения + аттестации + решения триажа |
-| GET | `/v1/tickets/{id}/transitions` | любой | append-only история статусов (поверхность «отслеживает статус» §3) |
-| GET | `/v1/tickets/{id}/attestations` | любой | записи гейтов по циклам |
-| PATCH | `/v1/tickets/{id}` | автор ∨ ba ∨ admins | title/description, только `{created, triage}`; `*_set`-флаги |
-| PUT | `/v1/tickets/{id}/submission` | автор ∨ ba ∨ admins | НОВАЯ версия подачи; только `created`, иначе 409 `TICKET_SUBMISSION_FROZEN` |
-| POST | `/v1/tickets/{id}/submit` | автор ∨ ba ∨ admins | ребро 1; guard `SubmissionValidator == []` |
-| POST | `/v1/tickets/{id}/triage` | ba ∨ admins | ребро 2; body: department_id, business_owner_subject, executor_subject?, priority?, comment? |
-| POST | `/v1/tickets/{id}/return-for-refinement` | ba ∨ admins | ребро 3 [PO]; comment обязателен |
-| POST | `/v1/tickets/{id}/reject` | ba ∨ admins | рёбра 4 и 10; reason/comment по правилам §3; DELETE-endpoint'а нет — тикеты не удаляются |
-| POST | `/v1/tickets/{id}/assign` | ba ∨ admins | смена business_owner/executor (история сохраняется); 409 в терминале |
-| POST | `/v1/tickets/{id}/attest-spec-approval` | **ba ТОЛЬКО** | запись `spec_approved`; body: spec_ref (обяз.), agreed_with_subject (== активный business_owner), comment? |
-| POST | `/v1/tickets/{id}/start-work` | ba ∨ executor(объект) ∨ admins | ребро 5; 409 `SPEC_NOT_APPROVED` / `ASSIGNMENT_MISSING` |
-| POST | `/v1/tickets/{id}/finish-work` | executor(объект) ∨ ba ∨ admins | ребро 6; единственное system-actor ребро (MVP) |
-| POST | `/v1/tickets/{id}/request-acceptance` | executor(объект) ∨ ba ∨ admins | ребро 7; body: changes_summary (обяз.) |
-| POST | `/v1/tickets/{id}/attest-formal-dod` | **ba ТОЛЬКО** | запись `formal_dod`; checklist все true, иначе 422 |
-| POST | `/v1/tickets/{id}/attest-business-value` | **активный business_owner ТОЛЬКО** | запись `business_value`; без ролевого фолбэка |
-| POST | `/v1/tickets/{id}/return-to-work` | ba ∨ business_owner(объект) ∨ admins | ребро 9 [PO]; cycle+1 |
-| POST | `/v1/tickets/{id}/close` | ba ∨ admins | ребро 8; 409 `ACCEPTANCE_GATE_INCOMPLETE` |
+| POST | `/api/v1/tickets` | любой сотрудник | создать тикет (`created`) + подача v1 + строка истории; 201 |
+| GET | `/api/v1/tickets` | любой | пагинированный список; фильтры status / department_id / mine / assigned_to_me |
+| GET | `/api/v1/tickets/stats/intake-share` | ba ∨ admins | метрика §9 (см. §8 ниже) |
+| GET | `/api/v1/tickets/{id}` | любой | деталь: ядро + текущая подача + назначения + аттестации + решения триажа |
+| GET | `/api/v1/tickets/{id}/transitions` | любой | append-only история статусов (поверхность «отслеживает статус» §3) |
+| GET | `/api/v1/tickets/{id}/attestations` | любой | записи гейтов по циклам |
+| PATCH | `/api/v1/tickets/{id}` | автор ∨ ba ∨ admins | title/description, только `{created, triage}`; `*_set`-флаги |
+| PUT | `/api/v1/tickets/{id}/submission` | автор ∨ ba ∨ admins | НОВАЯ версия подачи; только `created`, иначе 409 `TICKET_SUBMISSION_FROZEN` |
+| POST | `/api/v1/tickets/{id}/submit` | автор ∨ ba ∨ admins | ребро 1; guard `SubmissionValidator == []` |
+| POST | `/api/v1/tickets/{id}/triage` | ba ∨ admins | ребро 2; body: department_id, business_owner_subject, executor_subject?, priority?, comment? |
+| POST | `/api/v1/tickets/{id}/return-for-refinement` | ba ∨ admins | ребро 3 [PO]; comment обязателен |
+| POST | `/api/v1/tickets/{id}/reject` | ba ∨ admins | рёбра 4 и 10; reason/comment по правилам §3; DELETE-endpoint'а нет — тикеты не удаляются |
+| POST | `/api/v1/tickets/{id}/assign` | ba ∨ admins | смена business_owner/executor (история сохраняется); 409 в терминале |
+| POST | `/api/v1/tickets/{id}/attest-spec-approval` | **ba ТОЛЬКО** | запись `spec_approved`; body: spec_ref (обяз.), agreed_with_subject (== активный business_owner), comment? |
+| POST | `/api/v1/tickets/{id}/start-work` | ba ∨ executor(объект) ∨ admins | ребро 5; 409 `SPEC_NOT_APPROVED` / `ASSIGNMENT_MISSING` |
+| POST | `/api/v1/tickets/{id}/finish-work` | executor(объект) ∨ ba ∨ admins | ребро 6; единственное system-actor ребро (MVP) |
+| POST | `/api/v1/tickets/{id}/request-acceptance` | executor(объект) ∨ ba ∨ admins | ребро 7; body: changes_summary (обяз.) |
+| POST | `/api/v1/tickets/{id}/attest-formal-dod` | **ba ТОЛЬКО** | запись `formal_dod`; checklist все true, иначе 422 |
+| POST | `/api/v1/tickets/{id}/attest-business-value` | **активный business_owner ТОЛЬКО** | запись `business_value`; без ролевого фолбэка |
+| POST | `/api/v1/tickets/{id}/return-to-work` | ba ∨ business_owner(объект) ∨ admins | ребро 9 [PO]; cycle+1 |
+| POST | `/api/v1/tickets/{id}/close` | ba ∨ admins | ребро 8; 409 `ACCEPTANCE_GATE_INCOMPLETE` |
 
 Ошибки (`tickets/domain/errors.py`, подклассы `DomainError`): `TICKET_NOT_FOUND` 404, `TICKET_VALIDATION_ERROR` 422, `SUBMISSION_INVALID` 422 (details = `FieldError[]`), `TICKET_SUBMISSION_FROZEN` 409, `TICKET_TRANSITION_FORBIDDEN` 409, `TICKET_ACCESS_DENIED` 403, `ASSIGNMENT_MISSING` 409, `SPEC_NOT_APPROVED` 409, `ACCEPTANCE_GATE_INCOMPLETE` 409 (details = reasons), `ATTESTATION_NOT_ALLOWED` 403, `ATTESTATION_DUPLICATE` 409, `TRIAGE_DECISION_INVALID` 422. Ответы — `Envelope`/`PagedEnvelope`, конверт ошибок `{error, meta}` + `x-request-id` — как есть в `core/*`.
 
@@ -161,7 +161,7 @@ Router deps: `check_rate_limit` + `check_csrf` (идиома tasks/departments).
 
 ## 8. Метрика intake-share (exit-критерий Фазы 1, §9)
 
-`GET /v1/tickets/stats/intake-share?created_from=&created_to=` (ba ∨ admins) → `Envelope[{total, free_form, templated, templated_share, by_template_version[]}]`. Считается по **текущей** версии подачи каждого тикета против детерминированной `FREE_FORM_VERSION_ID` (посеяна миграцией 0004 в каждой tenant-схеме) — без cross-module join. Т.к. свободная форма — тоже шаблон, внутрисистемная доля тривиально 100%: endpoint отдаёт сырые счётчики, формулу exit-критерия выбирает PO (§11.8). Поглощается `analytics` в MVP.
+`GET /api/v1/tickets/stats/intake-share?created_from=&created_to=` (ba ∨ admins) → `Envelope[{total, free_form, templated, templated_share, by_template_version[]}]`. Считается по **текущей** версии подачи каждого тикета против детерминированной `FREE_FORM_VERSION_ID` (посеяна миграцией 0004 в каждой tenant-схеме) — без cross-module join. Т.к. свободная форма — тоже шаблон, внутрисистемная доля тривиально 100%: endpoint отдаёт сырые счётчики, формулу exit-критерия выбирает PO (§11.8). Поглощается `analytics` в MVP.
 
 ## 9. Миграция `0006_tenant_tickets`
 

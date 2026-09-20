@@ -1,14 +1,14 @@
 # Standalone frontend: build the SPA image and serve it against some backend.
 #
-# The SPA is same-origin with the API by design — this nginx proxies /v1 to the
+# The SPA is same-origin with the API by design — this nginx proxies /api/v1 to the
 # backend WITHOUT rewriting the path (that alignment is what keeps the BFF session
-# cookie and the path-scoped oidc_state cookie on /v1/auth/callback working), so it
+# cookie and the path-scoped oidc_state cookie on /api/v1/auth/callback working), so it
 # always needs a backend URL:
 #
 #   BACKEND_UPSTREAM=https://ba-dev.example.com docker compose up -d --build
 #
 # Two cases this file is deliberately NOT for:
-#   - day-to-day UI work → `npm run dev` (HMR on :5173, proxies /v1 to :8000)
+#   - day-to-day UI work → `npm run dev` (HMR on :5173, proxies /api/v1 to :8000)
 #   - the full local stack → the `configs` repo builds this image itself and wires
 #     it to the `app` service on the shared compose network
 services:

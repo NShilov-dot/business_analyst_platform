@@ -21,7 +21,7 @@ class NotificationItem:
     """One ticket lifecycle event addressed to the current user.
 
     Projected deliberately narrow: the source `audit_entries` row also carries
-    `before`/`after` JSONB snapshots, `roles` and `request_id`, and /v1/audit is
+    `before`/`after` JSONB snapshots, `roles` and `request_id`, and /api/v1/audit is
     gated to tenant_admin BECAUSE of those.  Echoing them here would hand every
     tenant_user field-level diffs through a back door.
     """

@@ -1,8 +1,8 @@
 """Public self-service company registration (Backend-for-Frontend).
 
-POST /v1/signup creates a brand-new tenant and its founding administrator in one
+POST /api/v1/signup creates a brand-new tenant and its founding administrator in one
 unauthenticated step. The founder then logs in via the normal OIDC flow and
-invites employees with POST /v1/admin/users.
+invites employees with POST /api/v1/admin/users.
 
 This is the ONLY anonymous path that creates a tenant. Keycloak-native self
 registration stays disabled (registrationAllowed=false) on purpose: a
@@ -66,5 +66,5 @@ async def signup(
         tenant_id=result.tenant_id,
         slug=result.slug,
         # The SPA sends the founder straight into the OIDC login after signup.
-        login_url="/v1/auth/login?return_to=/",
+        login_url="/api/v1/auth/login?return_to=/",
     )

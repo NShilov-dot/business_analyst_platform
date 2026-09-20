@@ -1,4 +1,4 @@
-/** Intake-templates API (/v1/templates). Any tenant member may list/read. */
+/** Intake-templates API (/api/v1/templates). Any tenant member may list/read. */
 
 import { api } from './client'
 import type { Envelope, PagedEnvelope } from './tickets'
@@ -41,6 +41,6 @@ export interface TemplateDetail extends Template {
 }
 
 export const templatesApi = {
-  list: (limit = 100) => api.get<PagedEnvelope<Template>>(`/v1/templates?limit=${limit}`),
-  get: (id: string) => api.get<Envelope<TemplateDetail>>(`/v1/templates/${id}`),
+  list: (limit = 100) => api.get<PagedEnvelope<Template>>(`/api/v1/templates?limit=${limit}`),
+  get: (id: string) => api.get<Envelope<TemplateDetail>>(`/api/v1/templates/${id}`),
 }

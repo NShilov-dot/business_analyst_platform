@@ -1,5 +1,5 @@
 /**
- * AI-intake chat API (/v1/intake-chat).
+ * AI-intake chat API (/api/v1/intake-chat).
  *
  * Контекст сессии живёт на бэкенде (Postgres, per-tenant): фронт всегда может
  * восстановить диалог по GET /sessions/{id}. Финализация — человеческое
@@ -70,38 +70,38 @@ export const intakeChatApi = {
     const body: Record<string, unknown> = {}
     if (templateVersionId) body.template_version_id = templateVersionId
     if (documentIds && documentIds.length > 0) body.document_ids = documentIds
-    return api.post<Envelope<SessionDetail>>('/v1/intake-chat/sessions', body)
+    return api.post<Envelope<SessionDetail>>('/api/v1/intake-chat/sessions', body)
   },
 
   list: (limit = 20, offset = 0) =>
     api.get<PagedEnvelope<ChatSession>>(
-      `/v1/intake-chat/sessions?limit=${limit}&offset=${offset}`,
+      `/api/v1/intake-chat/sessions?limit=${limit}&offset=${offset}`,
     ),
 
   getSession: (id: string) =>
-    api.get<Envelope<SessionDetail>>(`/v1/intake-chat/sessions/${id}`),
+    api.get<Envelope<SessionDetail>>(`/api/v1/intake-chat/sessions/${id}`),
 
   sendMessage: (id: string, content: string) =>
-    api.post<Envelope<Turn>>(`/v1/intake-chat/sessions/${id}/messages`, { content }),
+    api.post<Envelope<Turn>>(`/api/v1/intake-chat/sessions/${id}/messages`, { content }),
 
   rename: (id: string, title: string) =>
-    api.patch<Envelope<ChatSession>>(`/v1/intake-chat/sessions/${id}`, { draft_title: title }),
+    api.patch<Envelope<ChatSession>>(`/api/v1/intake-chat/sessions/${id}`, { draft_title: title }),
 
   finalize: (id: string) =>
-    api.post<Envelope<SessionDetail>>(`/v1/intake-chat/sessions/${id}/finalize`),
+    api.post<Envelope<SessionDetail>>(`/api/v1/intake-chat/sessions/${id}/finalize`),
 
   discard: (id: string) =>
-    api.post<Envelope<ChatSession>>(`/v1/intake-chat/sessions/${id}/discard`),
+    api.post<Envelope<ChatSession>>(`/api/v1/intake-chat/sessions/${id}/discard`),
 
   transcribe: (audio: Blob, filename: string) => {
     const form = new FormData()
     form.append('file', audio, filename)
-    return postForm<Envelope<{ text: string }>>('/v1/intake-chat/transcriptions', form)
+    return postForm<Envelope<{ text: string }>>('/api/v1/intake-chat/transcriptions', form)
   },
 
   warmupTranscription: () =>
-    api.post<Envelope<{ status: string }>>('/v1/intake-chat/transcriptions/warmup'),
+    api.post<Envelope<{ status: string }>>('/api/v1/intake-chat/transcriptions/warmup'),
 
   synthesizeSpeech: (text: string) =>
-    postJsonForBlob('/v1/intake-chat/transcriptions/speech', { text }),
+    postJsonForBlob('/api/v1/intake-chat/transcriptions/speech', { text }),
 }

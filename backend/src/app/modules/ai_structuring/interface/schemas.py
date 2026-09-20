@@ -1,4 +1,4 @@
-"""Pydantic schemas for /v1/intake-chat."""
+"""Pydantic schemas for /api/v1/intake-chat."""
 
 from __future__ import annotations
 

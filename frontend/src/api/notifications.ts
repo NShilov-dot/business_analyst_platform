@@ -1,5 +1,5 @@
 /**
- * Notifications API (/v1/notifications).
+ * Notifications API (/api/v1/notifications).
  *
  * Pull model: the feed is derived server-side from the audit log filtered to
  * tickets the caller is involved in — there is no stored inbox. The only
@@ -29,12 +29,12 @@ export interface NotificationFeed {
 export const notificationsApi = {
   feed: (limit = 20, includeRead = false) =>
     api.get<Envelope<NotificationFeed>>(
-      `/v1/notifications?limit=${limit}&include_read=${includeRead}`,
+      `/api/v1/notifications?limit=${limit}&include_read=${includeRead}`,
     ),
   // Per item, not a watermark: dismissing one event leaves older unread ones
   // unread. Idempotent server-side, so a retry is harmless.
   markRead: (entryIds: string[]) =>
-    api.post<Envelope<{ marked: number }>>('/v1/notifications/read', {
+    api.post<Envelope<{ marked: number }>>('/api/v1/notifications/read', {
       entry_ids: entryIds,
     }),
 }

@@ -13,7 +13,7 @@ from app.modules.tasks.interface.router import router as tasks_router
 from app.modules.tenants.interface.router import router as admin_router
 from app.modules.tickets.interface.router import router as tickets_router
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/api/v1")
 router.include_router(health.router)
 router.include_router(auth.router)
 router.include_router(signup.router)

@@ -62,21 +62,21 @@ The `is_system=True` flag protects this template:
 ## Immutability rule
 
 Once a `TemplateVersion` is published, its `fields` tuple is immutable.
-Edits must create a new draft via `POST /v1/templates/{id}/new-draft`, which
+Edits must create a new draft via `POST /api/v1/templates/{id}/new-draft`, which
 copies the fields of the latest published version into a new draft.
 
 ## API surface (Phase 1)
 
 | Method | Path | Roles | Description |
 |---|---|---|---|
-| GET | `/v1/templates` | any authenticated | Paginated list |
-| GET | `/v1/templates/selection-rules` | any authenticated | Static §6.4 rules |
-| GET | `/v1/templates/{id}` | any authenticated | Template + all versions |
-| POST | `/v1/templates` | `ba`, `tenant_admin` | Create template (seeds draft v1) |
-| PATCH | `/v1/templates/{id}/versions/{vid}/fields` | `ba`, `tenant_admin` | Replace draft fields |
-| POST | `/v1/templates/{id}/versions/{vid}/publish` | `ba`, `tenant_admin` | Draft → published |
-| POST | `/v1/templates/{id}/versions/{vid}/archive` | `ba`, `tenant_admin` | Published → archived |
-| POST | `/v1/templates/{id}/new-draft` | `ba`, `tenant_admin` | New draft from latest published |
+| GET | `/api/v1/templates` | any authenticated | Paginated list |
+| GET | `/api/v1/templates/selection-rules` | any authenticated | Static §6.4 rules |
+| GET | `/api/v1/templates/{id}` | any authenticated | Template + all versions |
+| POST | `/api/v1/templates` | `ba`, `tenant_admin` | Create template (seeds draft v1) |
+| PATCH | `/api/v1/templates/{id}/versions/{vid}/fields` | `ba`, `tenant_admin` | Replace draft fields |
+| POST | `/api/v1/templates/{id}/versions/{vid}/publish` | `ba`, `tenant_admin` | Draft → published |
+| POST | `/api/v1/templates/{id}/versions/{vid}/archive` | `ba`, `tenant_admin` | Published → archived |
+| POST | `/api/v1/templates/{id}/new-draft` | `ba`, `tenant_admin` | New draft from latest published |
 
 `validate_submission(template_version_id, payload)` is a service-layer method
 only — consumed by the `tickets` module (SubmissionValidator port) in Phase 2,

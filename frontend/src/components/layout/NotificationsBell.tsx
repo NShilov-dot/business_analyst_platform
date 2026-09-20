@@ -1,7 +1,7 @@
 /**
  * Notifications bell — unread badge + the events addressed to me.
  *
- * Pull model (PRODUCT_MODULES §5): polls /v1/notifications on an interval; the
+ * Pull model (PRODUCT_MODULES §5): polls /api/v1/notifications on an interval; the
  * backend derives the feed from the audit log. The panel shows only undismissed
  * events; clicking one dismisses it and opens the ticket. «Все» switches to the
  * recent history including already-read events.

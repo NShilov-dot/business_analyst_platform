@@ -1,4 +1,4 @@
-/** Departments API (/v1/departments). Any tenant member may list/read. */
+/** Departments API (/api/v1/departments). Any tenant member may list/read. */
 
 import { api } from './client'
 import type { Envelope, PagedEnvelope } from './tickets'
@@ -13,6 +13,6 @@ export interface Department {
 }
 
 export const departmentsApi = {
-  list: (limit = 100) => api.get<PagedEnvelope<Department>>(`/v1/departments?limit=${limit}`),
-  get: (id: string) => api.get<Envelope<Department>>(`/v1/departments/${id}`),
+  list: (limit = 100) => api.get<PagedEnvelope<Department>>(`/api/v1/departments?limit=${limit}`),
+  get: (id: string) => api.get<Envelope<Department>>(`/api/v1/departments/${id}`),
 }

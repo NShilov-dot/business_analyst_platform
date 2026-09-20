@@ -1,4 +1,4 @@
-"""Endpoint tests for /v1/templates.
+"""Endpoint tests for /api/v1/templates.
 
 The TemplateService is dependency-overridden — no real DB/Redis is touched.
 Tests cover: routing, RBAC (non-manager forbidden / manager allowed), request
@@ -173,13 +173,13 @@ async def _make_client(
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/templates/selection-rules — any authenticated
+# GET /api/v1/templates/selection-rules — any authenticated
 # ---------------------------------------------------------------------------
 
 
 async def test_get_selection_rules_authenticated() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.get("/v1/templates/selection-rules")
+        r = await ac.get("/api/v1/templates/selection-rules")
         assert r.status_code == 200, r.text
         body = r.json()
         assert isinstance(body["data"], list)
@@ -188,13 +188,13 @@ async def test_get_selection_rules_authenticated() -> None:
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/templates — any authenticated
+# GET /api/v1/templates — any authenticated
 # ---------------------------------------------------------------------------
 
 
 async def test_list_templates_authenticated() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.get("/v1/templates")
+        r = await ac.get("/api/v1/templates")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["data"][0]["name"] == "Change Request"
@@ -204,18 +204,18 @@ async def test_list_templates_authenticated() -> None:
 
 async def test_list_templates_pagination_params() -> None:
     async for ac, _ in _make_client("tenant_user"):
-        r = await ac.get("/v1/templates", params={"limit": 5, "offset": 10})
+        r = await ac.get("/api/v1/templates", params={"limit": 5, "offset": 10})
         assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/templates/{template_id} — any authenticated
+# GET /api/v1/templates/{template_id} — any authenticated
 # ---------------------------------------------------------------------------
 
 
 async def test_get_template_authenticated() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.get(f"/v1/templates/{_TMPL_ID}")
+        r = await ac.get(f"/api/v1/templates/{_TMPL_ID}")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["data"]["id"] == str(_TMPL_ID)
@@ -225,20 +225,20 @@ async def test_get_template_authenticated() -> None:
 
 async def test_get_template_not_found() -> None:
     async for ac, _ in _make_client("tenant_user", raises=TemplateNotFoundError("not found")):
-        r = await ac.get(f"/v1/templates/{uuid4()}")
+        r = await ac.get(f"/api/v1/templates/{uuid4()}")
         assert r.status_code == 404
         assert r.json()["error"]["code"] == "TEMPLATE_NOT_FOUND"
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/templates — ba, tenant_admin, or platform_admin
+# POST /api/v1/templates — ba, tenant_admin, or platform_admin
 # ---------------------------------------------------------------------------
 
 
 async def test_create_template_ba_role() -> None:
     async for ac, fake in _make_client("ba"):
         r = await ac.post(
-            "/v1/templates",
+            "/api/v1/templates",
             json={"type": "change", "name": "Change Request"},
         )
         assert r.status_code == 201, r.text
@@ -249,7 +249,7 @@ async def test_create_template_ba_role() -> None:
 async def test_create_template_tenant_admin_role() -> None:
     async for ac, fake in _make_client("tenant_admin"):
         r = await ac.post(
-            "/v1/templates",
+            "/api/v1/templates",
             json={"type": "feature_request", "name": "Feature"},
         )
         assert r.status_code == 201, r.text
@@ -260,7 +260,7 @@ async def test_create_template_platform_admin_role() -> None:
     """platform_admin must be allowed — it is in _MANAGE_ROLES."""
     async for ac, fake in _make_client("platform_admin"):
         r = await ac.post(
-            "/v1/templates",
+            "/api/v1/templates",
             json={"type": "change", "name": "Ops Template"},
         )
         assert r.status_code == 201, r.text
@@ -270,7 +270,7 @@ async def test_create_template_platform_admin_role() -> None:
 async def test_create_template_tenant_user_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
         r = await ac.post(
-            "/v1/templates",
+            "/api/v1/templates",
             json={"type": "change", "name": "X"},
         )
         assert r.status_code == 403
@@ -280,7 +280,7 @@ async def test_create_template_tenant_user_forbidden() -> None:
 async def test_create_template_duplicate_name_conflict() -> None:
     err = DuplicateTemplateNameError("already exists")
     async for ac, _ in _make_client("ba", raises=err):
-        r = await ac.post("/v1/templates", json={"type": "change", "name": "Same"})
+        r = await ac.post("/api/v1/templates", json={"type": "change", "name": "Same"})
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "DUPLICATE_TEMPLATE_NAME"
 
@@ -289,32 +289,32 @@ async def test_create_template_free_form_type_rejected() -> None:
     """free_form is reserved for the built-in system template — service returns 409."""
     err = SystemTemplateProtectedError("reserved")
     async for ac, _ in _make_client("ba", raises=err):
-        r = await ac.post("/v1/templates", json={"type": "free_form", "name": "My Free Form"})
+        r = await ac.post("/api/v1/templates", json={"type": "free_form", "name": "My Free Form"})
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "SYSTEM_TEMPLATE_PROTECTED"
 
 
 async def test_create_template_invalid_type() -> None:
     async for ac, _ in _make_client("ba"):
-        r = await ac.post("/v1/templates", json={"type": "nonexistent_type", "name": "X"})
+        r = await ac.post("/api/v1/templates", json={"type": "nonexistent_type", "name": "X"})
         assert r.status_code == 422
 
 
 async def test_create_template_missing_name() -> None:
     async for ac, _ in _make_client("ba"):
-        r = await ac.post("/v1/templates", json={"type": "change"})
+        r = await ac.post("/api/v1/templates", json={"type": "change"})
         assert r.status_code == 422
 
 
 async def test_create_template_blank_name_rejected() -> None:
     """Whitespace-only name must be rejected at the schema layer (422, not 409)."""
     async for ac, _ in _make_client("ba"):
-        r = await ac.post("/v1/templates", json={"type": "change", "name": "  "})
+        r = await ac.post("/api/v1/templates", json={"type": "change", "name": "  "})
         assert r.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# PATCH /v1/templates/{id}/versions/{vid}/fields — ba, tenant_admin, platform_admin
+# PATCH /api/v1/templates/{id}/versions/{vid}/fields — ba, tenant_admin, platform_admin
 # ---------------------------------------------------------------------------
 
 
@@ -344,7 +344,7 @@ _ALL_CORE_FIELDS = [
 async def test_update_draft_fields_ba() -> None:
     async for ac, fake in _make_client("ba"):
         r = await ac.patch(
-            f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/fields",
+            f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/fields",
             json={"fields": _ALL_CORE_FIELDS},
         )
         assert r.status_code == 200, r.text
@@ -354,7 +354,7 @@ async def test_update_draft_fields_ba() -> None:
 async def test_update_draft_fields_non_manager_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
         r = await ac.patch(
-            f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/fields",
+            f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/fields",
             json={"fields": _ALL_CORE_FIELDS},
         )
         assert r.status_code == 403
@@ -362,13 +362,13 @@ async def test_update_draft_fields_non_manager_forbidden() -> None:
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/templates/{id}/versions/{vid}/publish — ba, tenant_admin, platform_admin
+# POST /api/v1/templates/{id}/versions/{vid}/publish — ba, tenant_admin, platform_admin
 # ---------------------------------------------------------------------------
 
 
 async def test_publish_version_ba() -> None:
     async for ac, fake in _make_client("ba"):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/publish")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/publish")
         assert r.status_code == 200, r.text
         assert r.json()["data"]["status"] == "published"
         assert fake.calls == ["publish_version"]
@@ -376,19 +376,19 @@ async def test_publish_version_ba() -> None:
 
 async def test_publish_version_non_manager_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/publish")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/publish")
         assert r.status_code == 403
         assert fake.calls == []
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/templates/{id}/versions/{vid}/archive — ba, tenant_admin, platform_admin
+# POST /api/v1/templates/{id}/versions/{vid}/archive — ba, tenant_admin, platform_admin
 # ---------------------------------------------------------------------------
 
 
 async def test_archive_version_ba() -> None:
     async for ac, fake in _make_client("ba"):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/archive")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/archive")
         assert r.status_code == 200, r.text
         assert r.json()["data"]["status"] == "archived"
         assert fake.calls == ["archive_version"]
@@ -397,26 +397,26 @@ async def test_archive_version_ba() -> None:
 async def test_archive_system_template_conflict() -> None:
     err = SystemTemplateProtectedError("protected")
     async for ac, _ in _make_client("ba", raises=err):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/archive")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/archive")
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "SYSTEM_TEMPLATE_PROTECTED"
 
 
 async def test_archive_version_non_manager_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/archive")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/versions/{_VER_ID}/archive")
         assert r.status_code == 403
         assert fake.calls == []
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/templates/{id}/new-draft — ba, tenant_admin, platform_admin
+# POST /api/v1/templates/{id}/new-draft — ba, tenant_admin, platform_admin
 # ---------------------------------------------------------------------------
 
 
 async def test_new_draft_from_published_ba() -> None:
     async for ac, fake in _make_client("ba"):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/new-draft")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/new-draft")
         assert r.status_code == 201, r.text
         assert r.json()["data"]["version_number"] == 2
         assert fake.calls == ["new_draft_from_published"]
@@ -424,7 +424,7 @@ async def test_new_draft_from_published_ba() -> None:
 
 async def test_new_draft_non_manager_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.post(f"/v1/templates/{_TMPL_ID}/new-draft")
+        r = await ac.post(f"/api/v1/templates/{_TMPL_ID}/new-draft")
         assert r.status_code == 403
         assert fake.calls == []
 
@@ -436,7 +436,7 @@ async def test_new_draft_non_manager_forbidden() -> None:
 
 async def test_get_template_versions_shape() -> None:
     async for ac, _ in _make_client("tenant_user"):
-        r = await ac.get(f"/v1/templates/{_TMPL_ID}")
+        r = await ac.get(f"/api/v1/templates/{_TMPL_ID}")
         assert r.status_code == 200
         version = r.json()["data"]["versions"][0]
         assert "id" in version

@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/audit.
+"""FastAPI router for /api/v1/audit.
 
 Access gate: `tenant_admin` OR `platform_admin` (ANY-of intersection —
 see departments/interface/router.py for the pattern).
@@ -52,7 +52,7 @@ ServiceDep = Annotated[AuditService, Depends(_service)]
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/audit — paged list with optional filters
+# GET /api/v1/audit — paged list with optional filters
 # ---------------------------------------------------------------------------
 
 

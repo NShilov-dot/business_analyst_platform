@@ -1,4 +1,4 @@
-"""FastAPI router for /v1/analytics.
+"""FastAPI router for /api/v1/analytics.
 
 Access gate: any authenticated tenant member (PrincipalDep is required as
 auth guard; no additional role check — tickets are org-wide readable).
@@ -38,7 +38,7 @@ ServiceDep = Annotated[AnalyticsService, Depends(_service)]
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/analytics/ticket-flow
+# GET /api/v1/analytics/ticket-flow
 # ---------------------------------------------------------------------------
 
 
@@ -57,7 +57,7 @@ async def get_ticket_flow(
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/analytics/activity
+# GET /api/v1/analytics/activity
 # ---------------------------------------------------------------------------
 
 

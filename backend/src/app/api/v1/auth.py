@@ -1,12 +1,12 @@
 """Authentication endpoints — Backend-for-Frontend OIDC bridge.
 
 Flow:
-  1. Browser → GET  /v1/auth/login?return_to=/tasks
+  1. Browser → GET  /api/v1/auth/login?return_to=/tasks
      Backend generates state + PKCE, stores them in Redis, sets a short-lived
      `oidc_state` cookie on the initiating browser, and 307s to Keycloak.
 
   2. Browser → Keycloak (user logs in)
-     Keycloak → 302 to /v1/auth/callback?code=...&state=...
+     Keycloak → 302 to /api/v1/auth/callback?code=...&state=...
 
   3. Backend requires the request to (a) carry the `oidc_state` cookie that
      was set at step 1 AND (b) have it match the `state` query param —
@@ -19,10 +19,10 @@ Flow:
   4. All future API calls: browser sends the session cookie; the SessionDep
      in deps.py turns it into a Principal.
 
-  5. POST /v1/auth/logout — invalidates server-side session, clears cookie,
+  5. POST /api/v1/auth/logout — invalidates server-side session, clears cookie,
      revokes refresh token at Keycloak.
 
-  6. GET /v1/auth/me — returns minimal user info (subject + roles) without
+  6. GET /api/v1/auth/me — returns minimal user info (subject + roles) without
      exposing the JWT to the SPA.
 """
 
@@ -52,7 +52,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Cookie that binds an OIDC `state` value to the browser that initiated /login.
-# Scoped to /v1/auth/callback so it is never sent to any other endpoint.
+# Scoped to /api/v1/auth/callback so it is never sent to any other endpoint.
 _OIDC_STATE_COOKIE = "oidc_state"
 _OIDC_STATE_COOKIE_TTL_SECONDS = 300  # match LoginState TTL in Redis
 
@@ -68,11 +68,11 @@ class _AuthFlowError(DomainError):
 
 
 def _callback_url(public_base_url: str) -> str:
-    return public_base_url.rstrip("/") + "/v1/auth/callback"
+    return public_base_url.rstrip("/") + "/api/v1/auth/callback"
 
 
 def _callback_cookie_path() -> str:
-    return "/v1/auth/callback"
+    return "/api/v1/auth/callback"
 
 
 def _is_safe_return_to(return_to: str | None) -> str:
@@ -155,7 +155,7 @@ async def callback(
         raise _AuthFlowError("Missing 'code' or 'state' parameter")
 
     # Bind the response to the browser that initiated /login. The cookie was
-    # set at /login with Path=/v1/auth/callback so only that browser carries
+    # set at /login with Path=/api/v1/auth/callback so only that browser carries
     # it here. Without this check, anyone relayed a (code, state) pair could
     # have a session minted in their browser for the original user.
     cookie_state = request.cookies.get(_oidc_state_cookie_name(settings))

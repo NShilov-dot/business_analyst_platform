@@ -31,14 +31,14 @@ export const tasksApi = {
     if (params.offset !== undefined) qs.set('offset', String(params.offset))
     if (params.mine)                qs.set('mine',   'true')
     const q = qs.toString() ? `?${qs}` : ''
-    return api.get<PagedEnvelope<Task>>(`/v1/tasks${q}`)
+    return api.get<PagedEnvelope<Task>>(`/api/v1/tasks${q}`)
   },
 
-  get:      (id: string)                         => api.get<Envelope<Task>>(`/v1/tasks/${id}`),
-  create:   (input: CreateTaskInput)             => api.post<Envelope<Task>>('/v1/tasks', input),
-  update:   (id: string, input: UpdateTaskInput) => api.patch<Envelope<Task>>(`/v1/tasks/${id}`, input),
-  start:    (id: string)                         => api.post<Envelope<Task>>(`/v1/tasks/${id}/start`),
-  complete: (id: string)                         => api.post<Envelope<Task>>(`/v1/tasks/${id}/complete`),
-  cancel:   (id: string)                         => api.post<Envelope<Task>>(`/v1/tasks/${id}/cancel`),
-  delete:   (id: string)                         => api.delete(`/v1/tasks/${id}`),
+  get:      (id: string)                         => api.get<Envelope<Task>>(`/api/v1/tasks/${id}`),
+  create:   (input: CreateTaskInput)             => api.post<Envelope<Task>>('/api/v1/tasks', input),
+  update:   (id: string, input: UpdateTaskInput) => api.patch<Envelope<Task>>(`/api/v1/tasks/${id}`, input),
+  start:    (id: string)                         => api.post<Envelope<Task>>(`/api/v1/tasks/${id}/start`),
+  complete: (id: string)                         => api.post<Envelope<Task>>(`/api/v1/tasks/${id}/complete`),
+  cancel:   (id: string)                         => api.post<Envelope<Task>>(`/api/v1/tasks/${id}/cancel`),
+  delete:   (id: string)                         => api.delete(`/api/v1/tasks/${id}`),
 }

@@ -1,4 +1,4 @@
-"""Endpoint tests for /v1/departments.
+"""Endpoint tests for /api/v1/departments.
 
 The DepartmentService is dependency-overridden, so no real DB/Redis is touched.
 Tests cover: routing, RBAC (non-admin forbidden / admin allowed), request
@@ -124,13 +124,13 @@ async def _make_client(
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/departments — any authenticated member
+# GET /api/v1/departments — any authenticated member
 # ---------------------------------------------------------------------------
 
 
 async def test_list_departments_authenticated() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.get("/v1/departments")
+        r = await ac.get("/api/v1/departments")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["data"][0]["name"] == "Engineering"
@@ -140,18 +140,18 @@ async def test_list_departments_authenticated() -> None:
 
 async def test_list_departments_pagination_params() -> None:
     async for ac, _ in _make_client("tenant_user"):
-        r = await ac.get("/v1/departments", params={"limit": 5, "offset": 10})
+        r = await ac.get("/api/v1/departments", params={"limit": 5, "offset": 10})
         assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/departments/{id} — any authenticated member
+# GET /api/v1/departments/{id} — any authenticated member
 # ---------------------------------------------------------------------------
 
 
 async def test_get_department_authenticated() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.get(f"/v1/departments/{_DEPT_ID}")
+        r = await ac.get(f"/api/v1/departments/{_DEPT_ID}")
         assert r.status_code == 200, r.text
         assert r.json()["data"]["id"] == str(_DEPT_ID)
         assert fake.calls == ["get"]
@@ -159,18 +159,18 @@ async def test_get_department_authenticated() -> None:
 
 async def test_get_department_not_found() -> None:
     async for ac, _ in _make_client("tenant_user", raises=DepartmentNotFoundError("not found")):
-        r = await ac.get(f"/v1/departments/{uuid4()}")
+        r = await ac.get(f"/api/v1/departments/{uuid4()}")
         assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/departments — tenant_admin only
+# POST /api/v1/departments — tenant_admin only
 # ---------------------------------------------------------------------------
 
 
 async def test_create_department_admin() -> None:
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.post("/v1/departments", json={"name": "Engineering"})
+        r = await ac.post("/api/v1/departments", json={"name": "Engineering"})
         assert r.status_code == 201, r.text
         assert r.json()["data"]["name"] == "Engineering"
         assert fake.calls == ["create"]
@@ -179,21 +179,21 @@ async def test_create_department_admin() -> None:
 async def test_create_department_platform_admin_passes() -> None:
     """platform_admin must also be allowed (matches _ADMIN_ROLES in the router)."""
     async for ac, fake in _make_client("platform_admin"):
-        r = await ac.post("/v1/departments", json={"name": "Engineering"})
+        r = await ac.post("/api/v1/departments", json={"name": "Engineering"})
         assert r.status_code == 201, r.text
         assert fake.calls == ["create"]
 
 
 async def test_create_department_tenant_user_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.post("/v1/departments", json={"name": "Engineering"})
+        r = await ac.post("/api/v1/departments", json={"name": "Engineering"})
         assert r.status_code == 403, r.text
         assert fake.calls == []
 
 
 async def test_create_department_unauthenticated_forbidden() -> None:
     async for ac, fake in _make_client():  # no roles
-        r = await ac.post("/v1/departments", json={"name": "Engineering"})
+        r = await ac.post("/api/v1/departments", json={"name": "Engineering"})
         assert r.status_code == 403
         assert fake.calls == []
 
@@ -201,7 +201,7 @@ async def test_create_department_unauthenticated_forbidden() -> None:
 async def test_create_department_conflict() -> None:
     err = DepartmentNameConflictError("already exists")
     async for ac, _ in _make_client("tenant_admin", raises=err):
-        r = await ac.post("/v1/departments", json={"name": "Engineering"})
+        r = await ac.post("/api/v1/departments", json={"name": "Engineering"})
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "DEPARTMENT_NAME_CONFLICT"
 
@@ -209,44 +209,44 @@ async def test_create_department_conflict() -> None:
 async def test_create_department_invalid_body() -> None:
     async for ac, _ in _make_client("tenant_admin"):
         # name is required
-        r = await ac.post("/v1/departments", json={})
+        r = await ac.post("/api/v1/departments", json={})
         assert r.status_code == 422
 
 
 async def test_create_department_blank_name_rejected() -> None:
     """Whitespace-only name must be rejected at the schema layer (422, not 409)."""
     async for ac, _ in _make_client("tenant_admin"):
-        r = await ac.post("/v1/departments", json={"name": "   "})
+        r = await ac.post("/api/v1/departments", json={"name": "   "})
         assert r.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# PATCH /v1/departments/{id} — tenant_admin only
+# PATCH /api/v1/departments/{id} — tenant_admin only
 # ---------------------------------------------------------------------------
 
 
 async def test_update_department_admin() -> None:
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.patch(f"/v1/departments/{_DEPT_ID}", json={"is_active": False})
+        r = await ac.patch(f"/api/v1/departments/{_DEPT_ID}", json={"is_active": False})
         assert r.status_code == 200, r.text
         assert fake.calls == ["update"]
 
 
 async def test_update_department_non_admin_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.patch(f"/v1/departments/{_DEPT_ID}", json={"is_active": False})
+        r = await ac.patch(f"/api/v1/departments/{_DEPT_ID}", json={"is_active": False})
         assert r.status_code == 403
         assert fake.calls == []
 
 
 async def test_update_department_not_found() -> None:
     async for ac, _ in _make_client("tenant_admin", raises=DepartmentNotFoundError("not found")):
-        r = await ac.patch(f"/v1/departments/{uuid4()}", json={"name": "x"})
+        r = await ac.patch(f"/api/v1/departments/{uuid4()}", json={"name": "x"})
         assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/departments/{id}/members — tenant_admin only
+# POST /api/v1/departments/{id}/members — tenant_admin only
 # ---------------------------------------------------------------------------
 
 
@@ -254,7 +254,7 @@ async def test_add_member_admin() -> None:
     """add_member is idempotent — the endpoint always returns 200."""
     async for ac, fake in _make_client("tenant_admin"):
         r = await ac.post(
-            f"/v1/departments/{_DEPT_ID}/members",
+            f"/api/v1/departments/{_DEPT_ID}/members",
             json={"subject": "user-sub-001"},
         )
         assert r.status_code == 200, r.text
@@ -266,7 +266,7 @@ async def test_add_member_admin() -> None:
 async def test_add_member_non_admin_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
         r = await ac.post(
-            f"/v1/departments/{_DEPT_ID}/members",
+            f"/api/v1/departments/{_DEPT_ID}/members",
             json={"subject": "user-sub-001"},
         )
         assert r.status_code == 403
@@ -276,7 +276,7 @@ async def test_add_member_non_admin_forbidden() -> None:
 async def test_add_member_dept_not_found() -> None:
     async for ac, _ in _make_client("tenant_admin", raises=DepartmentNotFoundError("not found")):
         r = await ac.post(
-            f"/v1/departments/{uuid4()}/members",
+            f"/api/v1/departments/{uuid4()}/members",
             json={"subject": "user-sub-001"},
         )
         assert r.status_code == 404
@@ -284,30 +284,30 @@ async def test_add_member_dept_not_found() -> None:
 
 async def test_add_member_invalid_body() -> None:
     async for ac, _ in _make_client("tenant_admin"):
-        r = await ac.post(f"/v1/departments/{_DEPT_ID}/members", json={})
+        r = await ac.post(f"/api/v1/departments/{_DEPT_ID}/members", json={})
         assert r.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# DELETE /v1/departments/{id}/members/{subject} — tenant_admin only
+# DELETE /api/v1/departments/{id}/members/{subject} — tenant_admin only
 # ---------------------------------------------------------------------------
 
 
 async def test_remove_member_admin() -> None:
     async for ac, fake in _make_client("tenant_admin"):
-        r = await ac.delete(f"/v1/departments/{_DEPT_ID}/members/user-sub-001")
+        r = await ac.delete(f"/api/v1/departments/{_DEPT_ID}/members/user-sub-001")
         assert r.status_code == 204, r.text
         assert fake.calls == ["remove_member"]
 
 
 async def test_remove_member_non_admin_forbidden() -> None:
     async for ac, fake in _make_client("tenant_user"):
-        r = await ac.delete(f"/v1/departments/{_DEPT_ID}/members/user-sub-001")
+        r = await ac.delete(f"/api/v1/departments/{_DEPT_ID}/members/user-sub-001")
         assert r.status_code == 403
         assert fake.calls == []
 
 
 async def test_remove_member_dept_not_found() -> None:
     async for ac, _ in _make_client("tenant_admin", raises=DepartmentNotFoundError("not found")):
-        r = await ac.delete(f"/v1/departments/{uuid4()}/members/user-sub-001")
+        r = await ac.delete(f"/api/v1/departments/{uuid4()}/members/user-sub-001")
         assert r.status_code == 404

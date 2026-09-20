@@ -23,7 +23,7 @@ def _request(method: str, headers: dict[str, str]) -> Request:
     scope = {
         "type": "http",
         "method": method,
-        "path": "/v1/tasks",
+        "path": "/api/v1/tasks",
         "query_string": b"",
         "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
         "client": ("1.2.3.4", 1234),

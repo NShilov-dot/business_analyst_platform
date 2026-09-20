@@ -42,7 +42,7 @@ src/
 
 ```bash
 npm ci            # install
-npm run dev       # Vite dev server on :5173, proxies /v1 -> http://localhost:8000
+npm run dev       # Vite dev server on :5173, proxies /api/v1 -> http://localhost:8000
 npm run check     # tsc --noEmit — the type gate
 npm run build     # tsc && vite build
 ```
@@ -62,24 +62,24 @@ holds only an opaque HttpOnly session cookie. The SPA therefore has *no* Keycloa
 config, no token storage, and no `Authorization` header.
 
 - `api/client.ts` sends every request with `credentials: 'include'` and bounces to
-  `/v1/auth/login` on 401. `AuthProvider.tsx` has a sessionStorage-based loop breaker
+  `/api/v1/auth/login` on 401. `AuthProvider.tsx` has a sessionStorage-based loop breaker
   (max 3 redirects / 10s) — keep it when touching the 401 path.
 - `auth/access.ts` (`canManageTask`, `isOwnTask`) is **UX gating only.** The backend is
   the security boundary and authorizes every endpoint independently. Never treat a
   hidden button as an access control.
 
-### Invariant: `/v1` is proxied WITHOUT rewriting the path
+### Invariant: `/api/v1` is proxied WITHOUT rewriting the path
 
 Same-origin by design, in all three places that proxy this app:
 
 | Where | File |
 |---|---|
-| dev server | `vite.config.ts` (`/v1` → `http://localhost:8000`) |
-| this repo's SPA image | `nginx.conf.template` (`/v1/` → `${BACKEND_UPSTREAM}`) |
+| dev server | `vite.config.ts` (`/api/v1` → `http://localhost:8000`) |
+| this repo's SPA image | `nginx.conf.template` (`/api/v1/` → `${BACKEND_UPSTREAM}`) |
 | the stack's edge proxy | `configs/nginx/nginx.{dev,prod}.conf` |
 
 Rewriting or re-prefixing the path breaks the backend's **path-scoped `oidc_state`
-cookie** on `/v1/auth/callback`, and login fails in a way that looks like a Keycloak
+cookie** on `/api/v1/auth/callback`, and login fails in a way that looks like a Keycloak
 problem. Note `proxy_pass` has no trailing slash on purpose.
 
 Two more values are duplicated across those same nginx configs and must match the

@@ -19,6 +19,6 @@ export interface LogoutResult {
 }
 
 export const authApi = {
-  me:     ()                 => api.get<Me>('/v1/auth/me'),
-  logout: ()                 => api.post<LogoutResult>('/v1/auth/logout'),
+  me:     ()                 => api.get<Me>('/api/v1/auth/me'),
+  logout: ()                 => api.post<LogoutResult>('/api/v1/auth/logout'),
 }
