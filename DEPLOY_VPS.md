@@ -76,20 +76,32 @@ $EDITOR .env.prod
 | `PUBLIC_BASE_URL`, `FRONTEND_BASE_URL` | `https://<APP_HOST>` |
 | `KEYCLOAK_PUBLIC_ISSUER` | `https://<KC_HOSTNAME>/realms/bap` |
 | `TRUSTED_HOSTS`, `CORS_ORIGINS` | `<APP_HOST>` и `https://<APP_HOST>` |
-| `POSTGRES_PASSWORD`, `KC_DB_PASSWORD`, `REDIS_PASSWORD` | `openssl rand -base64 24` каждый |
+| `POSTGRES_PASSWORD`, `KC_DB_PASSWORD`, `REDIS_PASSWORD` | `openssl rand -hex 24` каждый — они подставляются внутрь URL (`postgresql://…:PASS@…`), `/` и `+` его ломают |
 | `KEYCLOAK_ADMIN_PASSWORD` | ≥12 символов (политика реалма) |
-| `OIDC_CLIENT_SECRET`, `KEYCLOAK_ADMIN_CLIENT_SECRET` | `openssl rand -base64 32` каждый (в §5 положим те же значения в реалм) |
-| `SESSION_ENCRYPTION_KEYS` | `openssl rand -base64 32` — AES-256 ключ шифрования токенов в Redis |
+| `OIDC_CLIENT_SECRET`, `KEYCLOAK_ADMIN_CLIENT_SECRET` | `openssl rand -hex 32` каждый (в §5 положим те же значения в реалм) |
+| `SESSION_ENCRYPTION_KEYS` | AES-256 ключ шифрования токенов в Redis — генерировать только командой ниже |
 | `S3_ENDPOINT_URL` | `https://<APP_HOST>:9443` (встроенный MinIO) либо внешний https-S3 |
-| `S3_ACCESS_KEY`, `S3_SECRET_KEY` | `openssl rand -base64 24` каждый |
+| `S3_ACCESS_KEY`, `S3_SECRET_KEY` | `openssl rand -hex 16` и `openssl rand -hex 24` — **hex, не base64**: `+ / =` ломают подпись SigV4 |
 
-`make gen-key` на VPS не работает (нужен `backend/.venv`) — используйте `openssl rand -base64 32`,
-формат тот же.
+`make gen-key` на VPS не работает (нужен `backend/.venv`). Эквивалент без venv — ровно то,
+что делает `app.core.crypto.generate_key()`; `openssl rand -base64 32` **не подходит**:
+приложение требует base64url от 32 байт и падает на старте с
+`SESSION_ENCRYPTION_KEYS entry is not valid base64`.
 
-**В значениях не должно быть `$`.** Docker Compose подставляет `$VAR` прямо в `.env.prod`,
-и пароль молча приезжает в контейнер обрезанным (в логе это `WARN The "xxxx" variable is
-not set`). Проверьте `grep '\$' .env.prod` — если что-то нашлось, перегенерируйте секрет
-(`openssl rand -base64 32` символ `$` не выдаёт) или удвойте: `$$`.
+```bash
+python3 -c "import base64,secrets;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+```
+
+**Все секреты, кроме `SESSION_ENCRYPTION_KEYS`, генерируйте как hex** (`openssl rand -hex N`).
+Причина: значения из `.env.prod` подставляются в URL (`DATABASE_URL`, `REDIS_URL`), в подпись
+SigV4 и в сам compose-файл, а `$` в значении Docker Compose раскрывает как переменную — пароль
+молча приезжает в контейнер обрезанным (в логе это `WARN The "xxxx" variable is not set`,
+дальше `FATAL Invalid credentials` у MinIO или отказ коннекта к БД). `SESSION_ENCRYPTION_KEYS`
+— исключение: это base64 AES-256 ключ, он парсится как base64 и в URL не попадает.
+
+```bash
+grep -n '[$/+=]' .env.prod     # кроме строк SESSION_ENCRYPTION_KEYS и URL-ов должно быть пусто
+```
 
 AI-функции (`OPENAI_API_KEY`, `TRANSCRIPTION_URL`) оставьте **пустыми**, пока передача ПДн
 внешним провайдерам не согласована письменно: пустой ключ = функция выключена (503),
@@ -158,6 +170,9 @@ p.write_text(json.dumps(realm, indent=2, ensure_ascii=False) + "\n", encoding="u
 print("realm-export.json patched for", app)
 PY
 
+# 5.3 Права: контейнер Keycloak работает под UID 1000 и должен прочитать файл,
+#     но секреты клиентов внутри — не для всех.
+sudo chown 1000:1000 backend/keycloak/realm-export.json
 chmod 600 backend/keycloak/realm-export.json
 ```
 
@@ -203,16 +218,25 @@ $DCP exec -T postgres psql -U app -d app -c \
    VALUES (gen_random_uuid(), 'Разработка ПО', 'Продуктовая разработка', true, now(), now());"
 ```
 
-Пользователи заводятся в админке Keycloak (`https://auth.korxona.com/admin`, логин из
-`KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`), для каждого:
+Демо-учёток в проде нет по построению — §5.1 вырезает их из реалма. Пользователей
+заводит `create_user.py`: он сам проставляет `tenant_id` (без этого атрибута вход не
+работает — тенант берётся из claim в токене, больше ниоткуда), выдаёт роли и печатает
+пароль:
 
-1. **Users → Add user**: username, email, Email verified = On.
-2. Вкладка **Attributes**: `tenant_id` = UUID из шага 7.2. **Без этого атрибута вход не
-   работает** — тенант берётся из claim в токене, больше ниоткуда.
-3. Вкладка **Role mapping**: всем `tenant_user` (это и есть «Заявитель»), плюс по роли —
-   `ba`, `business_owner`, `executor`, `approver`, `tenant_admin`.
-4. Вкладка **Credentials**: пароль ≥12 символов, не совпадающий с username/email
-   (политика реалма), Temporary по вкусу.
+```bash
+$DCP exec -T app python scripts/create_user.py --tenant beeline \
+  --username ivanov --email ivanov@korxona.com --roles tenant_user,ba
+# ivanov  8Kd2n-qPvX7aB1cw  roles=tenant_user,ba
+```
+
+`tenant_user` — это и есть «Заявитель», он нужен всем; сверх него по роли: `ba`,
+`business_owner`, `executor`, `approver`, `tenant_admin`. Пароль генерируется
+(≥12 символов, политика реалма), `--password` задаёт свой, `--temporary` требует
+смены при первом входе.
+
+Альтернатива руками — админка Keycloak (`https://auth.korxona.com/admin`, логин из
+`KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`): Users → Add user → вкладка **Attributes**
+`tenant_id` = UUID из 7.2 → **Role mapping** → **Credentials**.
 
 Проверка сквозного пути: `https://korxona.com` → редирект на Keycloak → вход →
 создание заявки.
@@ -291,6 +315,12 @@ echo '*/5 * * * * root curl -fsS https://korxona.com/api/v1/readyz >/dev/null ||
 - **`--import-realm` не переимпортирует уже созданный реалм.** Правка
   `realm-export.json` после первого запуска ни на что не влияет: меняйте через админку
   Keycloak либо (в крайнем случае, с потерей всех учёток) `docker volume rm bap_keycloak-db-data`.
+- **Секрет клиента живёт в двух местах.** `OIDC_CLIENT_SECRET` в `.env.prod` и секрет
+  клиента `bap-backend` в Keycloak должны совпадать. Поменяли секрет после первого
+  запуска — правка `realm-export.json` бесполезна (реалм уже импортирован): Clients →
+  bap-backend → Credentials → Regenerate, значение в `.env.prod`, рестарт `app`.
+  Симптом рассинхрона — `AUTH_FLOW_ERROR: Login failed during token exchange` после
+  успешного входа в Keycloak, в логе `app` — `oidc.token_endpoint_error error=invalid_client`.
 - **Провижининг тенанта неатомарен.** Сбой посередине оставляет строку в `public.tenants`
   без схемы или без группы в Keycloak — чистить вручную (`DROP SCHEMA tenant_<slug>`,
   `DELETE FROM public.tenants WHERE slug=…`, удалить группу в админке) и повторить.
