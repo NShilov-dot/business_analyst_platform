@@ -47,6 +47,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
+# Operator entrypoints run with `compose exec app python scripts/<name>.py`
+# (tenant provisioning, directory seeding) — they must live in the image.
+COPY scripts ./scripts
 EXPOSE 8000
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -61,6 +64,7 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 COPY --chown=app:app src ./src
 COPY --chown=app:app alembic ./alembic
 COPY --chown=app:app alembic.ini ./alembic.ini
+COPY --chown=app:app scripts ./scripts
 USER app
 EXPOSE 8000
 ENTRYPOINT ["/usr/bin/tini", "--"]

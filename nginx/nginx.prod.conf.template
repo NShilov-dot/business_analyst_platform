@@ -1,8 +1,19 @@
-# Edge reverse proxy — PRODUCTION. TLS-terminating single public origin.
+# Edge reverse proxy — PRODUCTION. TLS-terminating single public entry point.
 #
-# Certs: mount real certs at /etc/nginx/certs/{fullchain.pem,privkey.pem}
-# (compose mounts ./nginx/certs). For local prod-testing: `make tls-dev-cert`.
-# Set the public hostname via `server_name` below (or leave `_` to match any).
+# Rendered at container start by the nginx image's envsubst entrypoint:
+# ${APP_HOST} and ${KC_HOSTNAME} come from .env.prod (NGINX_ENVSUBST_FILTER pins
+# substitution to those two names, so nginx's own $host/$remote_addr survive).
+#
+# Certs: mount real certs at /etc/nginx/certs/{fullchain.pem,privkey.pem} — one
+# certificate covering BOTH hosts (compose mounts ./nginx/certs). Issue them with
+# certbot (see DEPLOY_VPS.md); `make tls-dev-cert` is for local prod-testing only.
+
+# Shared TLS settings (http context — inherited by every server below).
+ssl_certificate     /etc/nginx/certs/fullchain.pem;
+ssl_certificate_key /etc/nginx/certs/privkey.pem;
+ssl_protocols       TLSv1.2 TLSv1.3;
+ssl_ciphers         HIGH:!aNULL:!MD5;
+ssl_prefer_server_ciphers on;
 
 # HTTP -> HTTPS redirect.
 server {
@@ -11,16 +22,19 @@ server {
     return 301 https://$host$request_uri;
 }
 
+# www -> apex redirect (the cert covers www.${APP_HOST}; the app only ever sees
+# ${APP_HOST}, so TRUSTED_HOSTS/CORS stay single-valued).
 server {
     listen 443 ssl;
-    http2 on;
-    server_name _;
+    server_name www.${APP_HOST};
+    return 301 https://${APP_HOST}$request_uri;
+}
 
-    ssl_certificate     /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
+# --- SPA + API (the product) ---
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name ${APP_HOST};
 
     # HSTS at the edge (the backend also sets it in prod).
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
@@ -42,6 +56,49 @@ server {
     location / {
         proxy_pass         http://frontend:80;
         proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $remote_addr;
+        proxy_set_header   X-Forwarded-Proto https;
+    }
+}
+
+# --- Keycloak (browser-facing: login, consent, logout) ---
+# Also the backchannel target: the `app` container resolves ${KC_HOSTNAME} to
+# this nginx via a compose network alias, so token exchange and JWKS stay on the
+# host yet still speak https with a valid certificate (prod rejects an http issuer).
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${KC_HOSTNAME};
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+
+    location / {
+        proxy_pass         http://keycloak:8080;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $remote_addr;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_set_header   X-Forwarded-Port  443;
+    }
+}
+
+# --- MinIO (S3 API) — INTERNAL ONLY ---
+# Port 9443 is not published to the host: only containers on the compose network
+# can reach it. It exists purely so the backend can talk to the built-in MinIO
+# over https (validate_for_production rejects a plain-http S3_ENDPOINT_URL).
+server {
+    listen 9443 ssl;
+    server_name _;
+
+    client_max_body_size 0;          # object sizes are capped in the backend
+    proxy_request_buffering off;
+    proxy_buffering off;
+
+    location / {
+        proxy_pass         http://minio:9000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;   # part of the SigV4 signature
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $remote_addr;
         proxy_set_header   X-Forwarded-Proto https;

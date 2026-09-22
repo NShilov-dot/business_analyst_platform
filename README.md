@@ -41,6 +41,9 @@ make seed-demo      # seed the demo tenant so the seed users can resolve a tenan
 Full walkthrough (including prerequisites and troubleshooting):
 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
+Deploying the stack to a server (TLS, prod env, Keycloak realm, tenants, backups):
+**[DEPLOY_VPS.md](DEPLOY_VPS.md)**.
+
 ## Using it for a new product
 
 1. **Rebrand:** `scripts/init-template.sh --name <slug> --display "<Name>"` — see

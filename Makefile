@@ -45,7 +45,7 @@ env: ## Scaffold ./.env (dev) from backend/.env.example with a fresh encryption 
 
 env-prod: ## Scaffold ./.env.prod from .env.prod.example (then fill REAL secrets!)
 	@if [ -f .env.prod ]; then echo ".env.prod already exists — not overwriting"; else \
-	  cp .env.prod.example .env.prod; \
+	  cp .env.prod.example .env.prod && \
 	  echo "Created .env.prod — edit it and replace every CHANGE_ME (incl. SESSION_ENCRYPTION_KEYS, run 'make gen-key')."; fi
 
 gen-key: ## Print a fresh base64 AES-256 key for SESSION_ENCRYPTION_KEYS

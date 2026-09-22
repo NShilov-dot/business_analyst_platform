@@ -7,16 +7,16 @@ server {
     client_max_body_size 12m;
 
     # Single-origin: proxy the backend at its OWN paths (note: no trailing slash on
-    # proxy_pass, so /v1/... is forwarded unchanged — not rewritten). This makes the
+    # proxy_pass, so /api/v1/... is forwarded unchanged — not rewritten). This makes the
     # SPA and the API same-origin, so the BFF session cookie is sent on API calls and
-    # the path-scoped oidc_state cookie (/v1/auth/callback) lines up. The backend sets
+    # the path-scoped oidc_state cookie (/api/v1/auth/callback) lines up. The backend sets
     # its own security headers (incl. a strict API CSP) on these responses.
     #
     # BACKEND_UPSTREAM is substituted at container start by the nginx image's
     # envsubst entrypoint (NGINX_ENVSUBST_FILTER pins it to this one variable, so
     # nginx's own $host/$scheme/... survive). Default: http://app:8000 (the compose
     # service name in the full stack); override it to point at any other backend.
-    location /v1/ {
+    location /api/v1/ {
         proxy_pass         ${BACKEND_UPSTREAM};
         proxy_ssl_server_name on;   # SNI, for when BACKEND_UPSTREAM is https
         proxy_set_header   Host              $host;
