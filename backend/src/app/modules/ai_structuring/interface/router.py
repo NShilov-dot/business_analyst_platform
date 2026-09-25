@@ -245,19 +245,32 @@ async def _run_analysis(
     of the request's, which is already closed by the time this runs — Starlette
     runs background tasks after the response, i.e. after SessionDep's commit)
     and drives the deferred LLM pass through the same composition root.
+
+    NEVER raises, and brackets itself with log lines. A crash out here (pool
+    exhaustion, an unresolvable tenant, a bug in the composition root) lands in
+    the ASGI server's handler where nothing correlates it to the session, so the
+    row just sits at analysis_status='pending' until the TTL self-heal 10 minutes
+    later. The started/finished pair is what distinguishes "the task never ran"
+    from "the task ran and died" — the two have identical symptoms otherwise.
     """
-    async for bg_session in session_for_tenant(tenant):
-        publisher = _BoundPublisher(
-            bus=get_default_bus(),
-            session=bg_session,
-            actor=actor_sub,
-            request_id=None,
-            roles=sorted(roles),
-        )
-        service = build_chat_service(bg_session, publisher)
-        await service.run_document_analysis(
-            session_id=session_id, document_ids=document_ids, actor_id=actor_id, roles=roles
-        )
+    log.info("ai_chat.analysis_task_started session_id=%s", session_id)
+    try:
+        async for bg_session in session_for_tenant(tenant):
+            publisher = _BoundPublisher(
+                bus=get_default_bus(),
+                session=bg_session,
+                actor=actor_sub,
+                request_id=None,
+                roles=sorted(roles),
+            )
+            service = build_chat_service(bg_session, publisher)
+            await service.run_document_analysis(
+                session_id=session_id, document_ids=document_ids, actor_id=actor_id, roles=roles
+            )
+    except Exception:
+        log.exception("ai_chat.analysis_task_crashed session_id=%s", session_id)
+    else:
+        log.info("ai_chat.analysis_task_finished session_id=%s", session_id)
 
 
 @router.post(
